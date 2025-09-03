@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Rally Chat Tester (REST + Socket.IO)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root {
+      --bg:#0b1220; --card:#121a2b; --muted:#9fb0d3; --text:#e7eefc; --accent:#6aa1ff; --ok:#22c55e; --err:#ef4444;
+      --border:#1e2a44;
+    }
+    * { box-sizing: border-box; }
+    body { margin:0; background:var(--bg); color:var(--text); font: 14px/1.5 system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, sans-serif; }
+    header { padding: 18px 20px; border-bottom:1px solid var(--border); background: linear-gradient(180deg, #121a2b 0, #0b1220 100%); position: sticky; top:0; z-index:5;}
+    header h1 { margin:0; font-size:18px; }
+    header .subtitle { color:var(--muted); font-size:12px; }
+    main { display:grid; grid-template-columns: 360px 1fr; gap:16px; padding:16px; }
+    .col { display:flex; flex-direction:column; gap:16px; }
+    .card { background: var(--card); border:1px solid var(--border); border-radius:14px; padding:14px; }
+    .card h2 { margin:0 0 10px; font-size:16px; }
+    label { display:block; margin:8px 0 4px; color: var(--muted); }
+    input[type=text], input[type=password], input[type=datetime-local], textarea {
+      width:100%; padding:10px 12px; border-radius:10px; border:1px solid var(--border); background:#0c1426; color:var(--text);
+    }
+    input[type=file] { display:block; margin-top: 6px; }
+    textarea { min-height:84px; }
+    .row { display:flex; gap:8px; align-items:center; }
+    .btn { appearance:none; border:1px solid var(--border); background:#0f1830; color:var(--text); padding:8px 12px; border-radius:10px; cursor:pointer; }
+    .btn.primary { background: var(--accent); border-color: #4d82df; color:#081225; font-weight:600; }
+    .btn.ok { background: var(--ok); border-color:#16a34a; color:#041107; font-weight:600; }
+    .btn.warn { background:#ffb020; border-color:#e19b16; color:#0d0b05; font-weight:600; }
+    .btn:disabled { opacity:0.6; cursor:not-allowed; }
+    .muted { color:var(--muted); }
+    .mono  { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
+    #log { height: 220px; overflow: auto; background:#0c1426; padding:10px; border-radius:10px; border:1px solid var(--border); }
+    #messages { height: 420px; overflow:auto; display:flex; flex-direction:column; gap:10px; padding:10px; border:1px solid var(--border); border-radius:12px; background:#0c1426; }
+    .msg { padding:10px; border:1px solid var(--border); border-radius:10px; background:#0f1830; }
+    .msg .meta { font-size:12px; color:var(--muted); }
+    .msg.me { border-color:#244bff55; background:#0c153a; }
+    .badge { display:inline-block; padding:2px 8px; border-radius:999px; background:#0f1830; border:1px solid var(--border); color:var(--muted); font-size:12px; }
+    .kv { display:grid; grid-template-columns: 120px 1fr; gap:6px 10px; margin-top:8px; }
+    .kv .k { color:var(--muted); }
+    footer { padding:16px; text-align:center; color:var(--muted); }
+    .small { font-size:12px; }
+    .grid2 { display:grid; grid-template-columns: 1fr 1fr; gap:10px; }
+    .sep { height:1px; background:var(--border); margin:10px 0; }
+    .pill { padding:4px 8px; background:#0f1830; border:1px solid var(--border); border-radius:999px; }
+    .danger { color:#ff7066; }
+  </style>
+</head>
+<body>
+<header>
+  <h1>Rally Chat Tester</h1>
+  <div class="subtitle">Use REST to create events & chats, and Socket.IO for real-time messages.</div>
+</header>
+
+<main>
+  <section class="col">
+    <div class="card">
+      <h2>1) Configure</h2>
+      <label>Base URL</label>
+      <input id="baseUrl" type="text" value="http://localhost:3000" />
+      <div class="small muted">CORS origin must allow this page's origin (default backend allows <span class="pill">*</span>).</div>
+      <div class="sep"></div>
+      <div class="kv">
+        <div class="k">JWT</div><div class="v mono" id="jwtPreview">—</div>
+        <div class="k">User ID</div><div class="v mono" id="userIdPreview">—</div>
+        <div class="k">Event ID</div><div class="v mono" id="eventIdPreview">—</div>
+        <div class="k">Chat ID</div><div class="v mono" id="chatIdPreview">—</div>
+        <div class="k">Socket</div><div class="v"><span id="sockState" class="badge">disconnected</span></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>2) Auth</h2>
+      <div class="grid2">
+        <div>
+          <label>Name (register)</label>
+          <input id="name" type="text" value="Tester" />
+        </div>
+        <div>
+          <label>Email</label>
+          <input id="email" type="text" value="tester@example.com" />
+        </div>
+      </div>
+      <label>Password</label>
+      <input id="password" type="password" value="password123" />
+      <div class="row" style="margin-top:10px;">
+        <button class="btn" id="btnRegister">Register</button>
+        <button class="btn primary" id="btnLogin">Login</button>
+        <button class="btn warn" id="btnLogout">Clear Token</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>3) Event & Chat</h2>
+      <label>Existing Event ID (optional)</label>
+      <input id="eventIdInput" type="text" placeholder="paste an event id or create below" />
+      <div class="grid2">
+        <div>
+          <label>Title</label>
+          <input id="title" type="text" value="Quick Test Event" />
+        </div>
+        <div>
+          <label>Date/Time (local)</label>
+          <input id="dateTime" type="datetime-local" />
+        </div>
+      </div>
+      <div class="row" style="margin-top:10px;">
+        <button class="btn" id="btnCreateEvent">Create Event</button>
+        <button class="btn" id="btnEnsureChat">Ensure Chat</button>
+        <button class="btn ok" id="btnConnect">Connect Socket</button>
+        <button class="btn" id="btnJoin">Join Chat</button>
+        <button class="btn" id="btnLeave">Leave Chat</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>4) Send Message</h2>
+      <label>Text</label>
+      <input id="msgText" type="text" placeholder="type a message…" />
+      <div class="row" style="margin-top:8px;">
+        <button class="btn primary" id="btnSendSocket">Send via Socket</button>
+        <button class="btn" id="btnLoadMsgs">Load Recent</button>
+      </div>
+      <div class="sep"></div>
+      <label>Attachments (via REST)</label>
+      <input id="files" type="file" multiple />
+      <div class="row" style="margin-top:8px;">
+        <button class="btn" id="btnSendRest">Send via REST (uploads files)</button>
+      </div>
+      <div class="small muted">Socket path supports text + already-hosted attachment URLs. For file uploads, use REST (this button) and you’ll still see the new message in real-time.</div>
+    </div>
+
+    <div class="card">
+      <h2>Logs</h2>
+      <pre id="log" class="mono"></pre>
+    </div>
+  </section>
+
+  <section class="col">
+    <div class="card">
+      <h2>Messages</h2>
+      <div id="messages"></div>
+    </div>
+    <div class="card">
+      <h2>Socket Notes</h2>
+      <ul>
+        <li>Authenticate when connecting: <span class="mono">io(baseUrl, { auth: { token: &lt;JWT&gt; } })</span>.</li>
+        <li>Join an event chat room: <span class="mono">socket.emit("chat:join", chatId)</span>.</li>
+        <li>Send message: <span class="mono">socket.emit("message:send", { chatId, text })</span>.</li>
+        <li>Receive new messages: <span class="mono">socket.on("message:new", cb)</span>.</li>
+        <li>Leave room: <span class="mono">socket.emit("chat:leave", chatId)</span>.</li>
+      </ul>
+      <div class="small muted">Notifications (if emitted by server) arrive on <span class="mono">notification:new</span> channel.</div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="small">If CORS blocks requests, set <span class="mono">CORS_ORIGIN</span> in the server .env to match this page's origin.</div>
+</footer>
+
+<!-- Socket.IO client (v4 to match server) -->
+<script src="https://cdn.socket.io/4.8.1/socket.io.min.js"
+        integrity="sha384-mkQ3/7FUtcGyoppY6bz/PORYoGqOl7/aSUMn2ymDOJcapfS6PHqxhRTMh1RR0Q6+"
+        crossorigin="anonymous"></script>
+
+<script>
+  // Simple helper logging
+  const logEl = document.getElementById('log');
+  function log(...args) {
+    const line = args.map(a => (typeof a === 'string' ? a : JSON.stringify(a))).join(' ');
+    logEl.textContent += line + '\\n';
+    logEl.scrollTop = logEl.scrollHeight;
+    console.log(...args);
+  }
+
+  // State
+  let state = {
+    baseUrl: document.getElementById('baseUrl').value.trim(),
+    token: null,
+    userId: null,
+    eventId: null,
+    chatId: null,
+    socket: null
+  };
+
+  // UI helpers
+  const ids = (x) => document.getElementById(x);
+  function refreshStateUI() {
+    ids('jwtPreview').textContent = state.token ? (state.token.slice(0, 20) + '…') : '—';
+    ids('userIdPreview').textContent = state.userId || '—';
+    ids('eventIdPreview').textContent = state.eventId || '—';
+    ids('chatIdPreview').textContent = state.chatId || '—';
+    const badge = ids('sockState');
+    if (state.socket && state.socket.connected) { badge.textContent = 'connected'; badge.style.background = '#163a1f'; }
+    else if (state.socket) { badge.textContent = 'connecting'; badge.style.background = '#2b234a'; }
+    else { badge.textContent = 'disconnected'; badge.style.background = '#2b234a'; }
+  }
+  refreshStateUI();
+
+  ids('baseUrl').addEventListener('change', e => {
+    state.baseUrl = e.target.value.trim();
+    log('Base URL set to', state.baseUrl);
+  });
+
+  // HTTP helper
+  async function api(path, { method='GET', headers={}, body, isForm=false } = {}) {
+    const url = state.baseUrl.replace(/\/$/, '') + path;
+    const h = { ...(isForm ? {} : { 'Content-Type': 'application/json' }) };
+    if (state.token) h['Authorization'] = 'Bearer ' + state.token;
+    Object.assign(h, headers);
+    const res = await fetch(url, { method, headers: h, body });
+    const ct = res.headers.get('content-type') || '';
+    const data = ct.includes('application/json') ? await res.json() : await res.text();
+    if (!res.ok) throw Object.assign(new Error('HTTP ' + res.status), { status: res.status, data });
+    return data;
+  }
+
+  // Render messages
+  const msgBox = ids('messages');
+  function renderMessage(m) {
+    const me = m.senderId === state.userId;
+    const el = document.createElement('div');
+    el.className = 'msg' + (me ? ' me' : '');
+    const t = new Date(m.createdAt || Date.now()).toLocaleString();
+    const attachments = (m.attachments || []).map(u => `<div><a href="${u}" target="_blank">${u}</a></div>`).join('');
+    el.innerHTML = `
+      <div class="meta">${t} • ${me ? 'you' : (m.senderId || 'user')}</div>
+      <div>${(m.text || '').replace(/</g,'&lt;')}</div>
+      ${attachments ? `<div class="small">${attachments}</div>` : ''}
+    `;
+    msgBox.appendChild(el);
+    msgBox.scrollTop = msgBox.scrollHeight;
+  }
+
+  // Buttons
+  ids('btnRegister').onclick = async () => {
+    try {
+      const body = { name: ids('name').value.trim(), email: ids('email').value.trim(), password: ids('password').value };
+      const r = await api('/api/auth/register', { method:'POST', body: JSON.stringify(body) });
+      state.token = r?.data?.token; state.userId = r?.data?.user?.id;
+      log('Registered', r?.data?.user?.email);
+    } catch (e) { log('Register failed', e.status, e.data); }
+    refreshStateUI();
+  };
+
+  ids('btnLogin').onclick = async () => {
+    try {
+      const body = { email: ids('email').value.trim(), password: ids('password').value };
+      const r = await api('/api/auth/login', { method:'POST', body: JSON.stringify(body) });
+      state.token = r?.data?.token; state.userId = r?.data?.user?.id;
+      log('Logged in as', r?.data?.user?.email);
+    } catch (e) { log('Login failed', e.status, e.data); }
+    refreshStateUI();
+  };
+
+  ids('btnLogout').onclick = () => {
+    state.token = null; state.userId = null;
+    log('Token cleared');
+    refreshStateUI();
+  };
+
+  ids('btnCreateEvent').onclick = async () => {
+    try {
+      const dtLocal = ids('dateTime').value; // local, convert to ISO
+      const dt = dtLocal ? new Date(dtLocal).toISOString() : new Date().toISOString();
+      const fd = new FormData();
+      fd.append('title', ids('title').value || 'Test Event');
+      fd.append('dateTime', dt);
+      // optional: description/location fields
+      const r = await fetch(state.baseUrl.replace(/\/$/, '') + '/api/events', {
+        method:'POST',
+        headers: state.token ? { 'Authorization': 'Bearer ' + state.token } : {},
+        body: fd
+      });
+      const j = await r.json();
+      if (!r.ok) throw Object.assign(new Error('HTTP '+r.status), {status:r.status, data:j});
+      state.eventId = j?.data?.id;
+      state.chatId = j?.data?.chatId || null;
+      ids('eventIdInput').value = state.eventId || '';
+      log('Event created', state.eventId);
+    } catch (e) { log('Create event failed', e.status, e.data); }
+    refreshStateUI();
+  };
+
+  ids('btnEnsureChat').onclick = async () => {
+    try {
+      const evId = ids('eventIdInput').value.trim() || state.eventId;
+      if (!evId) return alert('No eventId set');
+      const r = await api(`/api/chats/events/${evId}/ensure`, { method:'POST' });
+      state.eventId = evId;
+      state.chatId = r?.data?.id;
+      log('Ensured chat', state.chatId);
+    } catch (e) { log('Ensure chat failed', e.status, e.data); }
+    refreshStateUI();
+  };
+
+  ids('btnConnect').onclick = () => {
+    try {
+      if (!state.token) return alert('Login first to get a JWT');
+      if (state.socket) { try { state.socket.disconnect(); } catch(_){} }
+      const base = state.baseUrl.replace(/\/$/, '');
+      const socket = io(base, { auth: { token: state.token } });
+      state.socket = socket;
+      refreshStateUI();
+
+      socket.on('connect', () => { log('Socket connected', socket.id); refreshStateUI(); });
+      socket.on('disconnect', (r) => { log('Socket disconnected', r); refreshStateUI(); });
+      socket.on('connect_error', (e) => { log('connect_error', e.message); });
+
+      socket.on('message:new', (m) => { log('message:new', m.id || m._id || ''); renderMessage(m); });
+      socket.on('notification:new', (n) => { log('notification:new', n); });
+
+    } catch (e) {
+      log('Socket error', e.message || e);
+    }
+  };
+
+  ids('btnJoin').onclick = () => {
+    const chatId = state.chatId || ids('eventIdInput').value.trim();
+    if (!state.socket) return alert('Connect socket first');
+    if (!chatId) return alert('No chatId set');
+    state.socket.emit('chat:join', chatId);
+    log('Joined room chat:'+chatId);
+  };
+
+  ids('btnLeave').onclick = () => {
+    const chatId = state.chatId || ids('eventIdInput').value.trim();
+    if (!state.socket) return alert('Connect socket first');
+    if (!chatId) return alert('No chatId set');
+    state.socket.emit('chat:leave', chatId);
+    log('Left room chat:'+chatId);
+  };
+
+  ids('btnLoadMsgs').onclick = async () => {
+    try {
+      const chatId = state.chatId;
+      if (!chatId) return alert('No chatId');
+      const r = await api(`/api/chats/${chatId}/messages`);
+      msgBox.innerHTML = '';
+      (r?.data || []).forEach(renderMessage);
+      log('Loaded messages:', (r?.data || []).length);
+    } catch (e) { log('Load messages failed', e.status, e.data); }
+  };
+
+  ids('btnSendSocket').onclick = () => {
+    try {
+      const chatId = state.chatId;
+      if (!chatId) return alert('No chatId');
+      if (!state.socket || !state.socket.connected) return alert('Socket not connected');
+      const text = ids('msgText').value;
+      state.socket.emit('message:send', { chatId, text });
+      ids('msgText').value = '';
+      log('Sent via socket');
+    } catch (e) { log('Send socket error', e.message || e); }
+  };
+
+  ids('btnSendRest').onclick = async () => {
+    try {
+      const chatId = state.chatId;
+      if (!chatId) return alert('No chatId');
+      const fd = new FormData();
+      const text = ids('msgText').value;
+      if (text) fd.append('text', text);
+      const files = ids('files').files;
+      for (let i=0;i<files.length;i++) {
+        fd.append('attachments', files[i]);
+      }
+      const res = await fetch(state.baseUrl.replace(/\/$/, '') + `/api/chats/${chatId}/messages`, {
+        method: 'POST',
+        headers: state.token ? { 'Authorization': 'Bearer ' + state.token } : {},
+        body: fd
+      });
+      const r = await res.json();
+      if (!res.ok) throw Object.assign(new Error('HTTP '+res.status), {status:res.status, data:r});
+      ids('msgText').value=''; ids('files').value='';
+      log('Sent via REST (uploaded)', r?.data?.id || '');
+    } catch (e) { log('Send REST failed', e.status, e.data); }
+  };
+
+  // Prefill datetime
+  (() => {
+    const now = new Date();
+    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+    ids('dateTime').value = now.toISOString().slice(0,16);
+  })();
+</script>
+</body>
+</html>
