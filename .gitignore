@@ -1,0 +1,46 @@
+# Node modules
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Build output
+dist/
+build/
+
+# TypeScript cache
+*.tsbuildinfo
+
+# Environment files
+.env
+
+# Logs
+logs/
+*.log
+logs/**/*.log
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+
+# IDE/editor settings
+.vscode/
+.idea/
+*.swp
+
+# Coverage / test outputs
+coverage/
+.nyc_output/
+
+# Temporary files
+.tmp/
+temp/
+*.tmp
+
+# Cloudinary / uploads (if you save locally during dev)
+uploads/
+
+# Postman
+*.postman_collection.json
+*.postman_environment.json
