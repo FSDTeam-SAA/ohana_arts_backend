@@ -3,8 +3,9 @@ import { ok } from "../utils/ApiResponse";
 import { User } from "../models";
 import { uploadBufferToCloudinary } from "../utils/cloudinaryUpload";
 import { deleteByPublicId } from "../utils/cloudinaryDelete";
+import { Response } from "express";
 
-export const updateProfile = asyncHandler(async (req: any, res) => {
+export const updateProfile = asyncHandler(async (req: any, res: Response) => {
   const { name, bio } = req.body;
   const update: any = {};
   if (name) update.name = name;

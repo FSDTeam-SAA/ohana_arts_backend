@@ -9,10 +9,11 @@ import { uploadBufferToCloudinary } from "../utils/cloudinaryUpload";
 import { nanoid } from "nanoid";
 import mongoose from "mongoose";
 import { deleteByPublicId } from "../utils/cloudinaryDelete";
+import { Request, Response } from "express";
 
 const parseNumber = (x?: string) => (x === undefined ? undefined : Number(x));
 
-export const createEvent = asyncHandler(async (req: any, res) => {
+export const createEvent = asyncHandler(async (req: any, res: Response) => {
   const { title, description, locationName, address, lat, lng, dateTime, capacity, fee } = req.body;
   if (!title || !dateTime) throw new ApiError(StatusCodes.BAD_REQUEST, "title & dateTime required");
 
@@ -45,7 +46,7 @@ export const createEvent = asyncHandler(async (req: any, res) => {
   res.status(StatusCodes.CREATED).json(created(saved));
 });
 
-export const listEvents = asyncHandler(async (req: any, res) => {
+export const listEvents = asyncHandler(async (req: any, res: Response) => {
   const scope = (req.query.scope as string) || "upcoming";
   const now = dayjs();
 
@@ -58,13 +59,13 @@ export const listEvents = asyncHandler(async (req: any, res) => {
   res.json(ok(events));
 });
 
-export const getEvent = asyncHandler(async (req, res) => {
+export const getEvent = asyncHandler(async (req: Request, res: Response) => {
   const event = await Event.findById(req.params.id);
   if (!event) throw new ApiError(StatusCodes.NOT_FOUND, "Event not found");
   res.json(ok(event));
 });
 
-export const updateEvent = asyncHandler(async (req: any, res) => {
+export const updateEvent = asyncHandler(async (req: any, res: Response) => {
   const patch: any = { ...req.body };
   if (patch.capacity) patch.capacity = Number(patch.capacity);
   if (patch.fee) patch.fee = Number(patch.fee);
@@ -85,7 +86,7 @@ export const updateEvent = asyncHandler(async (req: any, res) => {
   res.json(ok(existing));
 });
 
-export const rsvp = asyncHandler(async (req: any, res) => {
+export const rsvp = asyncHandler(async (req: any, res: Response) => {
   const { status } = req.body as { status: RSVPStatus };
   if (!Object.values(RSVPStatus).includes(status)) {
     throw new ApiError(StatusCodes.BAD_REQUEST, "Invalid RSVP status");
@@ -94,7 +95,7 @@ export const rsvp = asyncHandler(async (req: any, res) => {
   const event = await Event.findById(req.params.id);
   if (!event) throw new ApiError(StatusCodes.NOT_FOUND, "Event not found");
 
-  const idx = event.attendees.findIndex(a => a.userId.toString() === req.user.id);
+  const idx = event.attendees.findIndex((a: { userId: { toString: () => any; }; }) => a.userId.toString() === req.user.id);
   if (idx >= 0) {
     event.attendees[idx].status = status;
     event.attendees[idx].updatedAt = new Date();
@@ -105,7 +106,7 @@ export const rsvp = asyncHandler(async (req: any, res) => {
   res.json(ok(event.attendees));
 });
 
-export const inviteUser = asyncHandler(async (req: any, res) => {
+export const inviteUser = asyncHandler(async (req: any, res: Response) => {
   const { userId } = req.body;
   const eventId = req.params.id;
 
@@ -117,7 +118,7 @@ export const inviteUser = asyncHandler(async (req: any, res) => {
   res.status(StatusCodes.CREATED).json(created(inv));
 });
 
-export const respondInvite = asyncHandler(async (req: any, res) => {
+export const respondInvite = asyncHandler(async (req: any, res: Response) => {
   const { invitationId } = req.params;
   const { action } = req.body as { action: "Accept" | "Decline" };
 
@@ -137,7 +138,7 @@ export const respondInvite = asyncHandler(async (req: any, res) => {
   res.json(ok(inv));
 });
 
-export const createStop = asyncHandler(async (req: any, res) => {
+export const createStop = asyncHandler(async (req: any, res: Response) => {
   const eventId = req.params.id;
   const { name, order, time, fee, description, lat, lng, address } = req.body;
   if (!name || !order || !lat || !lng) throw new ApiError(StatusCodes.BAD_REQUEST, "Missing stop fields");
@@ -154,12 +155,12 @@ export const createStop = asyncHandler(async (req: any, res) => {
   res.status(StatusCodes.CREATED).json(created(stop));
 });
 
-export const listStops = asyncHandler(async (req, res) => {
+export const listStops = asyncHandler(async (req: Request, res: Response) => {
   const stops = await BarHopStop.find({ eventId: req.params.id }).sort({ order: 1 });
   res.json(ok(stops));
 });
 
-export const quickRally = asyncHandler(async (req: any, res) => {
+export const quickRally = asyncHandler(async (req: any, res: Response) => {
   const { locationName, lat, lng, address } = req.body;
   const event = await Event.create({
     title: "Quick Rally",
@@ -178,7 +179,7 @@ export const quickRally = asyncHandler(async (req: any, res) => {
   res.status(StatusCodes.CREATED).json(created({ event, quickRally: qr }));
 });
 
-export const deleteEvent = asyncHandler(async (req: any, res) => {
+export const deleteEvent = asyncHandler(async (req: any, res: Response) => {
   const event = await Event.findOne({ _id: req.params.id, createdBy: req.user.id });
   if (!event) throw new ApiError(StatusCodes.NOT_FOUND, "Event not found or not owner");
 
