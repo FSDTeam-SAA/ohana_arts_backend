@@ -33,7 +33,7 @@ export interface IUser extends Document {
 const UserSchema = new Schema<IUser>(
   {
     name: { type: String, required: true, trim: true },
-    email: { type: String, required: true, unique: true, lowercase: true },
+    email: { type: String, required: true, unique: true, lowercase: true }, // <- unique here creates the index
     passwordHash: { type: String, required: true, select: false },
     profilePhoto: String,
     profilePhotoPublicId: String,
@@ -47,7 +47,11 @@ const UserSchema = new Schema<IUser>(
     devices: [
       {
         token: { type: String, required: true },
-        platform: { type: String, enum: ["ios", "android", "web"], required: true },
+        platform: {
+          type: String,
+          enum: ["ios", "android", "web"],
+          required: true,
+        },
         lastSeenAt: Date,
       },
     ],
@@ -73,6 +77,7 @@ UserSchema.methods.comparePassword = function (plain: string) {
   return bcrypt.compare(plain, self.passwordHash);
 };
 
-UserSchema.index({ email: 1 }, { unique: true });
+// ✂️ Removed: UserSchema.index({ email: 1 }, { unique: true });
 
-export const User = mongoose.models.User || mongoose.model<IUser>("User", UserSchema);
+export const User =
+  mongoose.models.User || mongoose.model<IUser>("User", UserSchema);

@@ -65,7 +65,8 @@ const EventSchema = new Schema<IEvent>(
     capacity: Number,
     fee: Number,
 
-    inviteCode: { type: String, index: true },
+    // removed field-level index to avoid duplicate with Schema.index below
+    inviteCode: { type: String },
 
     createdBy: { type: Schema.Types.ObjectId, ref: "User", required: true },
 
@@ -89,8 +90,10 @@ const EventSchema = new Schema<IEvent>(
 
 toJSON(EventSchema);
 
+// helpful indexes (no duplicates)
 EventSchema.index({ _id: 1, "attendees.userId": 1 }, { unique: false });
 EventSchema.index({ createdBy: 1, dateTime: -1 });
-EventSchema.index({ inviteCode: 1 }, { sparse: true });
+EventSchema.index({ inviteCode: 1 }, { sparse: true }); // keep only this for inviteCode
 
-export const Event = mongoose.models.Event || mongoose.model<IEvent>("Event", EventSchema);
+export const Event =
+  mongoose.models.Event || mongoose.model<IEvent>("Event", EventSchema);
