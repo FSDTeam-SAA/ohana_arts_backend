@@ -1,16 +1,18 @@
 import { StatusCodes } from "http-status-codes";
-import jwt from "jsonwebtoken";
 import { asyncHandler } from "../utils/asyncHandler";
 import { ApiError } from "../utils/ApiError";
 import { created, ok } from "../utils/ApiResponse";
 import { User } from "../models";
 import { Request, Response } from "express";
 import { InvalidToken } from "../models/InvalidToken";
+import jwt, { SignOptions } from "jsonwebtoken";
 
 const sign = (id: string) =>
-  jwt.sign({ id }, process.env.JWT_SECRET!, {
-    expiresIn: process.env.JWT_EXPIRES_IN || "30d",
-  });
+  jwt.sign(
+    { id },
+    process.env.JWT_SECRET as string, 
+    { expiresIn: (process.env.JWT_EXPIRES_IN as string) || "3d" }
+  );
 
 export const register = asyncHandler(async (req: Request, res: Response) => {
   const { name, email, password } = req.body;

@@ -8,6 +8,7 @@ import { stripe } from "../config/stripe";
 import { getPayPalClient } from "../config/paypal";
 import paypal from "@paypal/checkout-server-sdk";
 import { StatusCodes } from "http-status-codes";
+import { Event } from "../models";
 
 export const uploadReceipt = asyncHandler(async (req: any, res: Response) => {
   const { eventId, amount, method } = req.body as { eventId: string; amount: string; method: PaymentMethod };
@@ -132,7 +133,11 @@ export const capturePaypalOrder = asyncHandler(async (req: any, res: Response) =
   const client = getPayPalClient();
 
   const request = new paypal.orders.OrdersCaptureRequest(orderId);
-  request.requestBody({});
+  request.requestBody({
+  payment_source: {
+    paypal: {}
+  } as any
+});
   const capture = await client.execute(request);
 
   const amount = Number(capture.result?.purchase_units?.[0]?.payments?.captures?.[0]?.amount?.value || 0);
@@ -149,6 +154,29 @@ export const capturePaypalOrder = asyncHandler(async (req: any, res: Response) =
   );
 
   res.json(ok({ id: orderId, capture: capture.result }));
+});
+
+//Added a new event for get all withdrawable funds
+export const getMyEventFunds = asyncHandler(async (req: any, res: Response) => {
+  const myEvents = await Event.find({ createdBy: req.user.id }).select("_id");
+  const myEventIds = myEvents.map((event) => event._id);
+
+
+  const receivedFunds = await Payment.find({
+  eventId: { $in: myEventIds },
+  status: "Paid",
+  })
+    .populate("eventId", "title dateTime")
+    .sort({ paidAt: -1 })
+    .lean();
+
+  const formattedFunds = receivedFunds.map((fund) => ({
+    eventName: (fund.eventId as any).title,
+    date: (fund.eventId as any).dateTime,
+    amount: fund.amount,
+  }));
+
+  res.json(ok(formattedFunds));
 });
 
 export const eventPayments = asyncHandler(async (req: Request, res: Response) => {
