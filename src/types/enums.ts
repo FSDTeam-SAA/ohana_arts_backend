@@ -48,4 +48,5 @@ export enum NotificationType {
   Payment = "Payment",
   RideUpdate = "RideUpdate",
   CheckIn = "CheckIn",
+  Points = "points"
 }

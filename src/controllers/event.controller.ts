@@ -10,6 +10,7 @@ import { nanoid } from "nanoid";
 import mongoose from "mongoose";
 import { deleteByPublicId } from "../utils/cloudinaryDelete";
 import { Request, Response } from "express";
+import { awardPoints } from "./reward.controller";
 
 const parseNumber = (x?: string) => (x === undefined ? undefined : Number(x));
 
@@ -42,6 +43,8 @@ export const createEvent = asyncHandler(async (req: any, res: Response) => {
   saved.chatId = chat._id;
   await saved.save();
   await CheckIn.create({ eventId: saved._id, userId: req.user.id, status: "StillOut" });
+
+  await awardPoints(saved.createdBy, "CREATE_RALLY", saved._id);
 
   res.status(StatusCodes.CREATED).json(created(saved));
 });
@@ -103,6 +106,7 @@ export const rsvp = asyncHandler(async (req: any, res: Response) => {
     event.attendees.push({ userId: req.user.id, status, updatedAt: new Date() } as any);
   }
   await event.save();
+  await awardPoints(req.user.id, "CREATE_RALLY", event._id);
   res.json(ok(event.attendees));
 });
 
