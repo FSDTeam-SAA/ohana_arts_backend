@@ -6,7 +6,6 @@ import { ApiError } from "../utils/ApiError";
 import {
   Event,
   Chat,
-  Invitation,
   BarHopStop,
   QuickRally,
   CheckIn,
@@ -100,10 +99,12 @@ export const listEvents = asyncHandler(async (req: any, res: Response) => {
       },
     };
   } else if (scope === "invitations") {
-    const invitedEventIds = await Invitation.find({
-      toUserId: req.user.id,
-    }).distinct("eventId");
-    filter = { _id: { $in: invitedEventIds } };
+    // Invitations tab = events where I'm Pending
+    filter = {
+      attendees: {
+        $elemMatch: { userId: req.user.id, status: RSVPStatus.Pending },
+      },
+    };
   }
 
   const events = await Event.find(filter).sort({ dateTime: 1 }).limit(100);
@@ -173,39 +174,81 @@ export const inviteUser = asyncHandler(async (req: any, res: Response) => {
   const { userId } = req.body;
   const eventId = req.params.id;
 
-  const inv = await Invitation.findOneAndUpdate(
-    { eventId, invitedUser: userId },
-    { $setOnInsert: { invitedBy: req.user.id, status: "Pending" } },
-    { upsert: true, new: true }
-  );
-  res.status(StatusCodes.CREATED).json(created(inv));
-});
+  const event = await Event.findById(eventId);
+  if (!event) throw new ApiError(StatusCodes.NOT_FOUND, "Event not found");
 
-export const respondInvite = asyncHandler(async (req: any, res: Response) => {
-  const { invitationId } = req.params;
-  const { action } = req.body as { action: "Accept" | "Decline" };
-
-  const inv = await Invitation.findById(invitationId);
-  if (!inv) throw new ApiError(StatusCodes.NOT_FOUND, "Invitation not found");
-  if (inv.invitedUser.toString() !== req.user.id)
-    throw new ApiError(StatusCodes.FORBIDDEN, "Not your invite");
-
-  inv.status = action === "Accept" ? "Accepted" : "Declined";
-  await inv.save();
-
-  if (inv.status === "Accepted") {
-    await Event.findByIdAndUpdate(inv.eventId, {
-      $addToSet: {
-        attendees: {
-          userId: inv.invitedUser,
-          status: RSVPStatus.Maybe,
-          updatedAt: new Date(),
-        },
-      },
-    });
+  if (event.createdBy.toString() !== req.user.id) {
+    throw new ApiError(StatusCodes.FORBIDDEN, "Only the host can invite");
   }
 
-  res.json(ok(inv));
+  const existing = event.attendees.find(
+    (a: any) => a.userId.toString() === String(userId)
+  );
+
+  if (existing) {
+    // If already invited and still pending, be idempotent
+    if (existing.status === RSVPStatus.Pending) {
+      return res.status(StatusCodes.OK).json(
+        ok({
+          message: "Already invited",
+          attendee: existing,
+        })
+      );
+    }
+    // Otherwise keep their current RSVP (Yes/Maybe/No)
+  } else {
+    event.attendees.push({
+      userId,
+      status: RSVPStatus.Pending,
+      invitedBy: req.user.id,
+      invitedAt: new Date(),
+      updatedAt: new Date(),
+    } as any);
+    await event.save();
+  }
+
+  // optional: socket notification here
+  // req.io?.toUser(String(userId)).emit("notification:new", { type: "INVITE", eventId });
+
+  res.status(StatusCodes.CREATED).json(
+    created({
+      eventId,
+      userId,
+      status: RSVPStatus.Pending,
+    })
+  );
+});
+
+// POST /api/events/:id/invite/respond  { action: "Accept" | "Decline" }
+export const respondInvite = asyncHandler(async (req: any, res: Response) => {
+  const { id: eventId } = req.params;
+  const { action } = req.body as { action: "Accept" | "Decline" };
+
+  const event = await Event.findById(eventId);
+  if (!event) throw new ApiError(StatusCodes.NOT_FOUND, "Event not found");
+
+  const me = event.attendees.find(
+    (a: any) => a.userId.toString() === req.user.id
+  );
+  if (!me) {
+    throw new ApiError(
+      StatusCodes.BAD_REQUEST,
+      "No pending invite for this event"
+    );
+  }
+
+  if (me.status !== RSVPStatus.Pending) {
+    return res.json(ok({ message: "Already responded", status: me.status }));
+  }
+
+  me.status = action === "Accept" ? RSVPStatus.Yes : RSVPStatus.No;
+  me.updatedAt = new Date();
+  await event.save();
+
+  // optional: notify host
+  // req.io?.toUser(String(event.createdBy)).emit("notification:new", { type: "INVITE_RESPONSE", eventId, status: me.status });
+
+  res.json(ok({ eventId, status: me.status }));
 });
 
 export const createStop = asyncHandler(async (req: any, res: Response) => {
@@ -255,7 +298,6 @@ export const quickRally = asyncHandler(async (req: any, res: Response) => {
     },
   });
   const chat = await Chat.create({
-    
     eventId: event._id,
     members: [req.user.id],
   });
@@ -293,7 +335,7 @@ export const deleteEvent = asyncHandler(async (req: any, res: Response) => {
       await Chat.deleteOne({ _id: chat._id }).session(session);
     }
 
-    await Invitation.deleteMany({ eventId: event._id }).session(session);
+    // await Invitation.deleteMany({ eventId: event._id }).session(session);
     await BarHopStop.deleteMany({ eventId: event._id }).session(session);
     await QuickRally.deleteMany({ eventId: event._id }).session(session);
     await CheckIn.deleteMany({ eventId: event._id }).session(session);
@@ -311,3 +353,16 @@ export const deleteEvent = asyncHandler(async (req: any, res: Response) => {
   await session.endSession();
   res.json(ok({ deleted: true }));
 });
+
+export const listMyInvitations = asyncHandler(
+  async (req: any, res: Response) => {
+    const events = await Event.find({
+      attendees: {
+        $elemMatch: { userId: req.user.id, status: RSVPStatus.Pending },
+      },
+    })
+      .sort({ dateTime: 1 })
+      .limit(100);
+    res.json(ok(events));
+  }
+);
