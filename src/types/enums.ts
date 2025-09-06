@@ -9,6 +9,7 @@ export enum RSVPStatus {
   Yes = "Yes",
   Maybe = "Maybe",
   No = "No",
+  Pending = "Pending",
 }
 
 export enum CheckInStatus {
