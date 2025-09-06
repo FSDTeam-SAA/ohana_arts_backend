@@ -3,5 +3,5 @@ import { auth } from "../middleware/auth";
 import { myRewards } from "../controllers/reward.controller";
 
 const router = Router();
-router.get("/me", auth, myRewards);
+router.get("/my-rewards", auth, myRewards);
 export default router;

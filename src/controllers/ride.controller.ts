@@ -3,6 +3,7 @@ import { created, ok } from "../utils/ApiResponse";
 import { Ride } from "../models";
 import { PassengerStatus, RideStatus } from "../types/enums";
 import { Request, Response } from "express";
+import { awardPoints } from "./reward.controller";
 
 export const createRide = asyncHandler(async (req: any, res: Response) => {
   const { eventId, vehicleName, capacity, fromHub, toHub } = req.body;
@@ -15,6 +16,9 @@ export const createRide = asyncHandler(async (req: any, res: Response) => {
     passengers: [],
     status: RideStatus.Active
   });
+
+  await awardPoints(req.user.id, "DESIGNATED_DRIVER", ride.eventId);
+
   res.status(201).json(created(ride));
 });
 
