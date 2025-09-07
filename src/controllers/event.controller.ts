@@ -88,27 +88,77 @@ export const listEvents = asyncHandler(async (req: any, res: Response) => {
 
   let filter: any = {};
   if (scope === "upcoming") {
-    filter = { dateTime: { $gte: now.toDate() } };
+      filter = {
+      $and: [
+        { dateTime: { $gte: now.toDate() } },
+        {
+          $or: [
+            { createdBy: req.user.id },
+            {
+              attendees: {
+                $elemMatch: { userId: req.user.id }
+              }
+            }
+          ]
+        }
+      ]
+    };
   } else if (scope === "past") {
+    // Existing logic:
     filter = { dateTime: { $lt: now.toDate() } };
-  } else if (scope === "live") {
     filter = {
-      dateTime: {
-        $gte: now.startOf("day").toDate(),
-        $lte: now.endOf("day").toDate(),
-      },
-    };
-  } else if (scope === "invitations") {
-    // Invitations tab = events where I'm Pending
-    filter = {
-      attendees: {
-        $elemMatch: { userId: req.user.id, status: RSVPStatus.Pending },
-      },
-    };
-  }
+      $and: [
+        { dateTime: { $lt: now.toDate() } },
+        {
+          $or: [
+            { createdBy: req.user.id },
+              {
+                attendees: {
+                $elemMatch: { userId: req.user.id }
+              }
+            }
+          ]
+        }
+      ]
+    };
+  } else if (scope === "live") {
+    // Existing logic:
+    filter = {
+      dateTime: {
+        $gte: now.startOf("day").toDate(),
+        $lte: now.endOf("day").toDate(),
+      },
+    };
+    filter = {
+      $and: [
+        {
+          dateTime: {
+            $gte: now.startOf("day").toDate(),
+            $lte: now.endOf("day").toDate(),
+          },
+        },
+        {
+          $or: [
+            { createdBy: req.user.id },
+            {
+              attendees: {
+                $elemMatch: { userId: req.user.id }
+              }
+            }
+          ]
+        }
+      ]
+    };
+  } else if (scope === "invitations") {
+    filter = {
+      attendees: {
+        $elemMatch: { userId: req.user.id, status: RSVPStatus.Pending },
+      },
+    };
+  }
 
-  const events = await Event.find(filter).sort({ dateTime: 1 }).limit(100);
-  res.json(ok(events));
+  const events = await Event.find(filter).sort({ dateTime: 1 }).limit(100);
+  res.json(ok(events));
 });
 
 export const getEvent = asyncHandler(async (req: Request, res: Response) => {
