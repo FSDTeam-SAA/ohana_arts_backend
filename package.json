@@ -25,6 +25,7 @@
     "morgan": "^1.10.1",
     "multer": "^1.4.5-lts.1",
     "nanoid": "^5.0.7",
+    "paypal": "^1.0.1",
     "socket.io": "^4.7.5",
     "stripe": "^16.6.0",
     "zod": "^3.23.8"
@@ -37,6 +38,7 @@
     "@types/jsonwebtoken": "^9.0.6",
     "@types/multer": "^1.4.12",
     "@types/node": "^20.14.2",
+    "@types/paypal__checkout-server-sdk": "^1.0.8",
     "tsx": "^4.20.5",
     "typescript": "^5.5.2"
   }

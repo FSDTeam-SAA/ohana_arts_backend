@@ -13,7 +13,7 @@ build/
 *.tsbuildinfo
 
 # Environment files
-.env
+#.env
 
 # Logs
 logs/
