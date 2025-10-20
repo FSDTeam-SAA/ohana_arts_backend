@@ -3,12 +3,9 @@ import { ok } from "../utils/ApiResponse";
 import { User } from "../models";
 import { uploadBufferToCloudinary } from "../utils/cloudinaryUpload";
 import { deleteByPublicId } from "../utils/cloudinaryDelete";
-<<<<<<< HEAD
 import { ApiError } from "../utils/ApiError";
 import { StatusCodes } from "http-status-codes";
-=======
-import { Response } from "express";
->>>>>>> a1483e2cda2734950818d33362de04e4a0e7415e
+import { Request, Response } from "express";
 
 export const updateProfile = asyncHandler(async (req: any, res: Response) => {
   const { name, bio } = req.body;
@@ -28,13 +25,13 @@ export const updateProfile = asyncHandler(async (req: any, res: Response) => {
   res.json(ok(updated));
 });
 
-export const getMe = asyncHandler(async (req: any, res) => {
+export const getMe = asyncHandler(async (req: any, res: Response) => {
   const user = await User.findById(req.user.id);
   return res.json(ok(user));
 });
 
-export const getUser = asyncHandler(async (req, res) => {
-  const user = await User.findById((req as any).params.id);
+export const getUser = asyncHandler(async (req: Request, res: Response) => {
+  const user = await User.findById(req.params.id);
   if (!user) throw new ApiError(StatusCodes.NOT_FOUND, "User not found");
   return res.json(ok(user));
 });

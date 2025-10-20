@@ -22,10 +22,10 @@ export const auth = async (req: AuthRequest, _res: Response, next: NextFunction)
     const payload = jwt.verify(token, process.env.JWT_SECRET!) as { id: string };
     if (!payload?.id) throw new ApiError(StatusCodes.UNAUTHORIZED, "Invalid token");
 
-    const user = await User.findById(payload.id).lean();
+    const user = await User.findById(payload.id).select("_id");
     if (!user) throw new ApiError(StatusCodes.UNAUTHORIZED, "User not found");
 
-    req.user = { id: user._id.toString() };
+    req.user = { id: user.id };
     next();
   } catch (err) {
     next(new ApiError(StatusCodes.UNAUTHORIZED, "Unauthorized", err));

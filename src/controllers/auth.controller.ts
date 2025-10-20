@@ -7,10 +7,12 @@ import { User } from "../models";
 import { Request, Response } from "express";
 import { InvalidToken } from "../models/InvalidToken";
 
-const sign = (id: string) =>
-  jwt.sign({ id }, process.env.JWT_SECRET!, {
-    expiresIn: process.env.JWT_EXPIRES_IN || "30d",
-  });
+const sign = (id: string) => {
+  const secret = process.env.JWT_SECRET as jwt.Secret;
+  const expiresIn: jwt.SignOptions["expiresIn"] =
+    (process.env.JWT_EXPIRES_IN as unknown as jwt.SignOptions["expiresIn"]) || "30d";
+  return jwt.sign({ id }, secret, { expiresIn });
+};
 
 export const register = asyncHandler(async (req: Request, res: Response) => {
   const { name, email, password } = req.body;
