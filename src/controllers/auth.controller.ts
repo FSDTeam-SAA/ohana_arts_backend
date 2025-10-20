@@ -6,10 +6,13 @@ import { created, ok } from "../utils/ApiResponse";
 import { User } from "../models";
 import { Request, Response } from "express";
 import { InvalidToken } from "../models/InvalidToken";
+import { uploadBufferToCloudinary } from "../utils/cloudinaryUpload";
+import { deleteByPublicId } from "../utils/cloudinaryDelete";
+
 
 const sign = (id: string) =>
   jwt.sign({ id }, process.env.JWT_SECRET!, {
-    expiresIn: process.env.JWT_EXPIRES_IN || "30d",
+    expiresIn: "30d",
   });
 
 export const register = asyncHandler(async (req: Request, res: Response) => {
@@ -18,7 +21,8 @@ export const register = asyncHandler(async (req: Request, res: Response) => {
     throw new ApiError(StatusCodes.BAD_REQUEST, "Missing fields");
 
   const exists = await User.findOne({ email }).lean();
-  if (exists) throw new ApiError(StatusCodes.CONFLICT, "Email already registered");
+  if (exists)
+    throw new ApiError(StatusCodes.CONFLICT, "Email already registered");
 
   const user = new User({ name, email, passwordHash: password });
   await user.save();
@@ -30,7 +34,8 @@ export const register = asyncHandler(async (req: Request, res: Response) => {
 export const login = asyncHandler(async (req: Request, res: Response) => {
   const { email, password } = req.body;
   const user = await User.findOne({ email }).select("+passwordHash");
-  if (!user) throw new ApiError(StatusCodes.UNAUTHORIZED, "Invalid credentials");
+  if (!user)
+    throw new ApiError(StatusCodes.UNAUTHORIZED, "Invalid credentials");
 
   const okPass = await user.comparePassword(password);
   if (!okPass)
@@ -44,45 +49,49 @@ export const me = asyncHandler(async (req: Request, res: Response) => {
   return res.json(ok(user));
 });
 
-export const changePassword = asyncHandler(async (req: Request, res: Response) => {
-  const { oldPassword, newPassword } = req.body;
-  if (!oldPassword || !newPassword)
-    throw new ApiError(StatusCodes.BAD_REQUEST, "Missing passwords");
+export const changePassword = asyncHandler(
+  async (req: Request, res: Response) => {
+    const { oldPassword, newPassword } = req.body;
+    if (!oldPassword || !newPassword)
+      throw new ApiError(StatusCodes.BAD_REQUEST, "Missing passwords");
 
-  const user = await User.findById(req.user!.id).select("+passwordHash");
-  if (!user) throw new ApiError(StatusCodes.UNAUTHORIZED, "User not found");
+    const user = await User.findById(req.user!.id).select("+passwordHash");
+    if (!user) throw new ApiError(StatusCodes.UNAUTHORIZED, "User not found");
 
-  const isMatch = await user.comparePassword(oldPassword);
-  if (!isMatch)
-    throw new ApiError(StatusCodes.UNAUTHORIZED, "Old password is incorrect");
+    const isMatch = await user.comparePassword(oldPassword);
+    if (!isMatch)
+      throw new ApiError(StatusCodes.UNAUTHORIZED, "Old password is incorrect");
 
-  user.passwordHash = newPassword;
-  await user.save();
-  return res.json(ok({ message: "Password updated successfully" }));
-});
-
-export const withdrawFunds = asyncHandler(async (req: Request, res: Response) => {
-  const { amount } = req.body;
-  if (!amount || isNaN(amount) || amount <= 0)
-    throw new ApiError(StatusCodes.BAD_REQUEST, "Invalid amount");
-
-  const user = await User.findById(req.user!.id);
-  if (!user) throw new ApiError(StatusCodes.NOT_FOUND, "User not found");
-
-  if (user.withdrawableBalance < amount) {
-    throw new ApiError(StatusCodes.BAD_REQUEST, "Insufficient balance");
+    user.passwordHash = newPassword;
+    await user.save();
+    return res.json(ok({ message: "Password updated successfully" }));
   }
+);
 
-  user.withdrawableBalance -= amount;
-  await user.save();
+export const withdrawFunds = asyncHandler(
+  async (req: Request, res: Response) => {
+    const { amount } = req.body;
+    if (!amount || isNaN(amount) || amount <= 0)
+      throw new ApiError(StatusCodes.BAD_REQUEST, "Invalid amount");
 
-  return res.json(
-    ok({
-      message: `Withdrawal of ${amount} successful.`,
-      newBalance: user.withdrawableBalance,
-    })
-  );
-});
+    const user = await User.findById(req.user!.id);
+    if (!user) throw new ApiError(StatusCodes.NOT_FOUND, "User not found");
+
+    if (user.withdrawableBalance < amount) {
+      throw new ApiError(StatusCodes.BAD_REQUEST, "Insufficient balance");
+    }
+
+    user.withdrawableBalance -= amount;
+    await user.save();
+
+    return res.json(
+      ok({
+        message: `Withdrawal of ${amount} successful.`,
+        newBalance: user.withdrawableBalance,
+      })
+    );
+  }
+);
 
 export const logout = asyncHandler(async (req: Request, res: Response) => {
   const token = req.headers.authorization?.split(" ")[1];
@@ -94,3 +103,34 @@ export const logout = asyncHandler(async (req: Request, res: Response) => {
   await InvalidToken.create({ token, expiresAt });
   res.json(ok({ message: "Logout successful" }));
 });
+
+export const updateProfilePhoto = asyncHandler(
+  async (req: Request, res: Response) => {
+    if (!req.file) {
+      throw new ApiError(StatusCodes.BAD_REQUEST, "No file uploaded");
+    }
+
+    const user = await User.findById(req.user!.id);
+    if (!user) throw new ApiError(StatusCodes.NOT_FOUND, "User not found");
+
+    // 1. Delete old photo if exists
+    if (user.profilePhotoPublicId) {
+      await deleteByPublicId(user.profilePhotoPublicId);
+    }
+
+    // 2. Upload new photo
+    const { url, public_id } = await uploadBufferToCloudinary(
+      req.file.buffer,
+      "profile_photos"
+    );
+
+    // 3. Update user document
+    user.profilePhoto = url;
+    user.profilePhotoPublicId = public_id;
+    await user.save();
+
+    return res.json(
+      ok({ message: "Profile photo updated", profilePhoto: url, user })
+    );
+  }
+);

@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { auth } from "../middleware/auth";
-import { upload } from "../middleware/multipart";
+import { upload } from "../middleware/upload";
+import { getAllUsers } from "../controllers/user.controller";
 import {
   createEvent,
   listEvents,
@@ -22,6 +23,8 @@ const router = Router();
 
 // Quick rally
 router.post("/quick", auth, quickRally);
+
+router.get("/allUsers", auth, getAllUsers);
 
 // Invitations tab (now RSVP-based)
 router.get("/me/invitations", auth, listMyInvitations);

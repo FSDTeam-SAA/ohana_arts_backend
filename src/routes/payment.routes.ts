@@ -1,8 +1,12 @@
 import { Router } from "express";
 import { auth } from "../middleware/auth";
-import { upload } from "../middleware/multipart";
+import { upload } from "../middleware/upload";
 import {
-  eventPayments, uploadReceipt, createStripeCheckout, createPaypalOrder, capturePaypalOrder
+  eventPayments,
+  uploadReceipt,
+  createStripeCheckout,
+  createPaypalOrder,
+  capturePaypalOrder,
 } from "../controllers/payment.controller";
 
 const router = Router();
