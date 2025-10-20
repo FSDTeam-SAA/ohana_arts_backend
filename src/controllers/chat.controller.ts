@@ -3,8 +3,9 @@ import { ok, created } from "../utils/ApiResponse";
 import { Chat, Message } from "../models";
 import { uploadBufferToCloudinary } from "../utils/cloudinaryUpload";
 import type { SocketHelpers } from "../socket";
+import { Request, Response } from "express";
 
-export const ensureEventChat = asyncHandler(async (req: any, res) => {
+export const ensureEventChat = asyncHandler(async (req: any, res: Response) => {
   const chat = await Chat.findOneAndUpdate(
     { eventId: req.params.eventId },
     { $setOnInsert: { members: [req.user.id], lastMessageAt: new Date() } },
@@ -13,7 +14,7 @@ export const ensureEventChat = asyncHandler(async (req: any, res) => {
   res.json(ok(chat));
 });
 
-export const listMessages = asyncHandler(async (req, res) => {
+export const listMessages = asyncHandler(async (req: Request, res: Response) => {
   const msgs = await Message.find({ chatId: req.params.chatId }).sort({ createdAt: -1 }).limit(100);
   res.json(ok(msgs.reverse()));
 });

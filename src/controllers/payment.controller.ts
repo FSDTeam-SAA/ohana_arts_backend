@@ -9,7 +9,7 @@ import { getPayPalClient } from "../config/paypal";
 import paypal from "@paypal/checkout-server-sdk";
 import { StatusCodes } from "http-status-codes";
 
-export const uploadReceipt = asyncHandler(async (req: any, res) => {
+export const uploadReceipt = asyncHandler(async (req: any, res: Response) => {
   const { eventId, amount, method } = req.body as { eventId: string; amount: string; method: PaymentMethod };
   let receiptUrl: string | undefined;
   if (req.file) {
@@ -28,7 +28,7 @@ export const uploadReceipt = asyncHandler(async (req: any, res) => {
   res.status(201).json(created(payment));
 });
 
-export const createStripeCheckout = asyncHandler(async (req: any, res) => {
+export const createStripeCheckout = asyncHandler(async (req: any, res: Response) => {
   const { eventId, amount, successUrl, cancelUrl } = req.body as {
     eventId: string;
     amount: number;
@@ -102,7 +102,7 @@ export const stripeWebhook = async (req: Request, res: Response) => {
   res.json({ received: true });
 };
 
-export const createPaypalOrder = asyncHandler(async (req: any, res) => {
+export const createPaypalOrder = asyncHandler(async (req: any, res: Response) => {
   const { eventId, amount, currency = "USD" } = req.body as { eventId: string; amount: number; currency?: string };
 
   const client = getPayPalClient();
@@ -127,7 +127,7 @@ export const createPaypalOrder = asyncHandler(async (req: any, res) => {
   res.status(StatusCodes.CREATED).json(created({ id: order.result.id, links: order.result.links }));
 });
 
-export const capturePaypalOrder = asyncHandler(async (req: any, res) => {
+export const capturePaypalOrder = asyncHandler(async (req: any, res: Response) => {
   const orderId = req.params.orderId;
   const client = getPayPalClient();
 
@@ -151,7 +151,7 @@ export const capturePaypalOrder = asyncHandler(async (req: any, res) => {
   res.json(ok({ id: orderId, capture: capture.result }));
 });
 
-export const eventPayments = asyncHandler(async (req, res) => {
+export const eventPayments = asyncHandler(async (req: Request, res: Response) => {
   const list = await Payment.find({ eventId: req.params.eventId }).sort({ createdAt: -1 });
   const collected = list.reduce((s, p) => s + (p.status === "Paid" ? p.amount : 0), 0);
   res.json(ok({ list, collected }));

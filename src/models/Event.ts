@@ -75,10 +75,12 @@ const EventSchema = new Schema<IEvent>(
         userId: { type: Schema.Types.ObjectId, ref: "User", required: true },
         status: {
           type: String,
-          enum: Object.values(RSVPStatus),
+          enum: Object.values(RSVPStatus), // includes "Pending"
           required: true,
           default: RSVPStatus.Maybe,
         },
+        invitedBy: { type: Schema.Types.ObjectId, ref: "User" }, // NEW
+        invitedAt: { type: Date }, // NEW
         updatedAt: { type: Date, default: Date.now },
       },
     ],

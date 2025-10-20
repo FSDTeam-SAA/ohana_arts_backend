@@ -3,10 +3,14 @@ import { ok } from "../utils/ApiResponse";
 import { User } from "../models";
 import { uploadBufferToCloudinary } from "../utils/cloudinaryUpload";
 import { deleteByPublicId } from "../utils/cloudinaryDelete";
+<<<<<<< HEAD
 import { ApiError } from "../utils/ApiError";
 import { StatusCodes } from "http-status-codes";
+=======
+import { Response } from "express";
+>>>>>>> a1483e2cda2734950818d33362de04e4a0e7415e
 
-export const updateProfile = asyncHandler(async (req: any, res) => {
+export const updateProfile = asyncHandler(async (req: any, res: Response) => {
   const { name, bio } = req.body;
   const update: any = {};
   if (name) update.name = name;

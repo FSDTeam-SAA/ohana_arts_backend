@@ -1,12 +1,13 @@
 import { asyncHandler } from "../utils/asyncHandler";
 import { ok } from "../utils/ApiResponse";
 import { Notification } from "../models";
+import { Response } from "express";
 
-export const listNotifications = asyncHandler(async (req: any, res) => {
+export const listNotifications = asyncHandler(async (req: any, res: Response) => {
   const notifs = await Notification.find({ userId: req.user.id }).sort({ createdAt: -1 }).limit(50);
   res.json(ok(notifs));
 });
-export const markRead = asyncHandler(async (req: any, res) => {
+export const markRead = asyncHandler(async (req: any, res: Response) => {
   await Notification.findOneAndUpdate({ _id: req.params.id, userId: req.user.id }, { isRead: true });
   res.json(ok({}));
 });

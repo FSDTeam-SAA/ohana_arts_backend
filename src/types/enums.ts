@@ -9,6 +9,7 @@ export enum RSVPStatus {
   Yes = "Yes",
   Maybe = "Maybe",
   No = "No",
+  Pending = "Pending",
 }
 
 export enum CheckInStatus {
@@ -48,4 +49,5 @@ export enum NotificationType {
   Payment = "Payment",
   RideUpdate = "RideUpdate",
   CheckIn = "CheckIn",
+  Points = "points"
 }
