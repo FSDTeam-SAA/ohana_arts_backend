@@ -88,18 +88,68 @@ export const listEvents = asyncHandler(async (req: any, res: Response) => {
 
   let filter: any = {};
   if (scope === "upcoming") {
-    filter = { dateTime: { $gte: now.toDate() } };
+    filter = {
+      $and: [
+        { dateTime: { $gte: now.toDate() } },
+        {
+          $or: [
+            { createdBy: req.user.id },
+            {
+              attendees: {
+                $elemMatch: { userId: req.user.id },
+              },
+            },
+          ],
+        },
+      ],
+    };
   } else if (scope === "past") {
+    // Existing logic:
     filter = { dateTime: { $lt: now.toDate() } };
+    filter = {
+      $and: [
+        { dateTime: { $lt: now.toDate() } },
+        {
+          $or: [
+            { createdBy: req.user.id },
+            {
+              attendees: {
+                $elemMatch: { userId: req.user.id },
+              },
+            },
+          ],
+        },
+      ],
+    };
   } else if (scope === "live") {
+    // Existing logic:
     filter = {
       dateTime: {
         $gte: now.startOf("day").toDate(),
         $lte: now.endOf("day").toDate(),
       },
     };
+    filter = {
+      $and: [
+        {
+          dateTime: {
+            $gte: now.startOf("day").toDate(),
+            $lte: now.endOf("day").toDate(),
+          },
+        },
+        {
+          $or: [
+            { createdBy: req.user.id },
+            {
+              attendees: {
+                $elemMatch: { userId: req.user.id },
+              },
+            },
+          ],
+        },
+      ],
+    };
   } else if (scope === "invitations") {
-    // Invitations tab = events where I'm Pending
     filter = {
       attendees: {
         $elemMatch: { userId: req.user.id, status: RSVPStatus.Pending },
@@ -107,7 +157,11 @@ export const listEvents = asyncHandler(async (req: any, res: Response) => {
     };
   }
 
-  const events = await Event.find(filter).sort({ dateTime: 1 }).limit(100);
+  const events = await Event.find(filter)
+    .sort({ dateTime: 1 })
+    .limit(100)
+    .populate("attendees.userId", "name profilePhoto"); // <-- THIS IS THE MODIFIED LINE
+
   res.json(ok(events));
 });
 
