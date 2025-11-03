@@ -14,7 +14,7 @@ import {
   Ride,
   Task,
 } from "../models";
-import { RSVPStatus } from "../types/enums";
+import { RSVPStatus } from "../types/enums"; // <-- RSVPStatus is needed
 import { uploadBufferToCloudinary } from "../utils/cloudinaryUpload";
 import { nanoid } from "nanoid";
 import mongoose from "mongoose";
@@ -39,11 +39,24 @@ export const createEvent = asyncHandler(async (req: any, res: Response) => {
   if (!title || !dateTime)
     throw new ApiError(StatusCodes.BAD_REQUEST, "title & dateTime required");
 
+  // --- NEW VALIDATION ---
+  // Check if the event date is in the past
+  const eventDate = dayjs(dateTime);
+  const today = dayjs().startOf("day");
+
+  if (eventDate.isBefore(today)) {
+    throw new ApiError(
+      StatusCodes.BAD_REQUEST,
+      "Event date cannot be in the past"
+    );
+  }
+  // --- END NEW VALIDATION ---
+
   const event: any = {
     title,
     description,
     location: { name: locationName, address },
-    dateTime: new Date(dateTime),
+    dateTime: eventDate.toDate(), // Use the validated dayjs object
     capacity: parseNumber(capacity),
     fee: parseNumber(fee),
     createdBy: req.user.id,
@@ -96,7 +109,13 @@ export const listEvents = asyncHandler(async (req: any, res: Response) => {
             { createdBy: req.user.id },
             {
               attendees: {
-                $elemMatch: { userId: req.user.id },
+                // --- MODIFIED LOGIC ---
+                // Only show if user RSVP'd Yes or Maybe, not Pending
+                $elemMatch: {
+                  userId: req.user.id,
+                  status: { $in: [RSVPStatus.Yes, RSVPStatus.Maybe] },
+                },
+                // --- END MODIFIED LOGIC ---
               },
             },
           ],
@@ -114,7 +133,13 @@ export const listEvents = asyncHandler(async (req: any, res: Response) => {
             { createdBy: req.user.id },
             {
               attendees: {
-                $elemMatch: { userId: req.user.id },
+                // --- MODIFIED LOGIC ---
+                // Only show if user RSVP'd Yes or Maybe, not Pending
+                $elemMatch: {
+                  userId: req.user.id,
+                  status: { $in: [RSVPStatus.Yes, RSVPStatus.Maybe] },
+                },
+                // --- END MODIFIED LOGIC ---
               },
             },
           ],
@@ -142,7 +167,13 @@ export const listEvents = asyncHandler(async (req: any, res: Response) => {
             { createdBy: req.user.id },
             {
               attendees: {
-                $elemMatch: { userId: req.user.id },
+                // --- MODIFIED LOGIC ---
+                // Only show if user RSVP'd Yes or Maybe, not Pending
+                $elemMatch: {
+                  userId: req.user.id,
+                  status: { $in: [RSVPStatus.Yes, RSVPStatus.Maybe] },
+                },
+                // --- END MODIFIED LOGIC ---
               },
             },
           ],
@@ -152,6 +183,7 @@ export const listEvents = asyncHandler(async (req: any, res: Response) => {
   } else if (scope === "invitations") {
     filter = {
       attendees: {
+        // This logic remains correct, only showing 'Pending'
         $elemMatch: { userId: req.user.id, status: RSVPStatus.Pending },
       },
     };
@@ -160,7 +192,7 @@ export const listEvents = asyncHandler(async (req: any, res: Response) => {
   const events = await Event.find(filter)
     .sort({ dateTime: 1 })
     .limit(100)
-    .populate("attendees.userId", "name profilePhoto"); // <-- THIS IS THE MODIFIED LINE
+    .populate("attendees.userId", "name profilePhoto");
 
   res.json(ok(events));
 });
@@ -175,7 +207,20 @@ export const updateEvent = asyncHandler(async (req: any, res: Response) => {
   const patch: any = { ...req.body };
   if (patch.capacity) patch.capacity = Number(patch.capacity);
   if (patch.fee) patch.fee = Number(patch.fee);
-  if (patch.dateTime) patch.dateTime = new Date(patch.dateTime);
+
+  // --- NEW VALIDATION ---
+  if (patch.dateTime) {
+    const eventDate = dayjs(patch.dateTime);
+    const today = dayjs().startOf("day");
+    if (eventDate.isBefore(today)) {
+      throw new ApiError(
+        StatusCodes.BAD_REQUEST,
+        "Event date cannot be in the past"
+      );
+    }
+    patch.dateTime = eventDate.toDate(); // Use the validated dayjs object
+  }
+  // --- END NEW VALIDATION ---
 
   const existing = await Event.findOne({
     _id: req.params.id,
@@ -220,7 +265,14 @@ export const rsvp = asyncHandler(async (req: any, res: Response) => {
     } as any);
   }
   await event.save();
-  await awardPoints(req.user.id, "CREATE_RALLY", event._id);
+
+  // --- LOGIC CHANGE ---
+  // Award points for *joining* (RSVP 'Yes'), not just any RSVP
+  if (status === RSVPStatus.Yes) {
+    await awardPoints(req.user.id, "JOIN_RALLY", event._id);
+  }
+  // --- END LOGIC CHANGE ---
+
   res.json(ok(event.attendees));
 });
 
@@ -299,6 +351,13 @@ export const respondInvite = asyncHandler(async (req: any, res: Response) => {
   me.updatedAt = new Date();
   await event.save();
 
+  // --- LOGIC CHANGE ---
+  // Award points for accepting an invite
+  if (me.status === RSVPStatus.Yes) {
+    await awardPoints(req.user.id, "JOIN_RALLY", event._id);
+  }
+  // --- END LOGIC CHANGE ---
+
   // optional: notify host
   // req.io?.toUser(String(event.createdBy)).emit("notification:new", { type: "INVITE_RESPONSE", eventId, status: me.status });
 
@@ -338,7 +397,7 @@ export const quickRally = asyncHandler(async (req: any, res: Response) => {
   const event = await Event.create({
     title: "Quick Rally",
     description: "Auto-generated",
-    dateTime: new Date(),
+    dateTime: new Date(), // Quick Rallies are always 'now'
     createdBy: req.user.id,
     attendees: [{ userId: req.user.id, status: RSVPStatus.Yes }],
     inviteCode: nanoid(8),
