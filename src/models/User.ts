@@ -6,6 +6,12 @@ import bcrypt from "bcryptjs";
 import { Badge } from "../types/enums";
 import { toJSON } from "./plugins/toJSON";
 
+// For the new location field
+export interface IGeoPoint {
+  type: "Point";
+  coordinates: [number, number];
+}
+
 export interface IUser extends Document {
   name: string;
   email: string;
@@ -13,6 +19,8 @@ export interface IUser extends Document {
   profilePhoto?: string;
   profilePhotoPublicId?: string;
   bio?: string;
+  phone?: string; // <-- NEW FIELD
+  currentLocation?: IGeoPoint; // <-- NEW FIELD
 
   rewardPoints: number;
   badge: Badge;
@@ -33,11 +41,20 @@ export interface IUser extends Document {
 const UserSchema = new Schema<IUser>(
   {
     name: { type: String, required: true, trim: true },
-    email: { type: String, required: true, unique: true, lowercase: true }, // <- unique here creates the index
+    email: { type: String, required: true, unique: true, lowercase: true },
     passwordHash: { type: String, required: true, select: false },
     profilePhoto: String,
     profilePhotoPublicId: String,
     bio: { type: String, maxlength: 500 },
+    phone: String, // <-- NEW FIELD
+
+    // --- NEW FIELD ---
+    // For storing user's live location
+    currentLocation: {
+      type: { type: String, enum: ["Point"], default: "Point" },
+      coordinates: { type: [Number], default: [0, 0] },
+    },
+    // --- END NEW FIELD ---
 
     rewardPoints: { type: Number, default: 0 },
     badge: { type: String, enum: Object.values(Badge), default: Badge.Bronze },
@@ -63,6 +80,11 @@ const UserSchema = new Schema<IUser>(
 
 toJSON(UserSchema);
 
+// --- NEW INDEX ---
+// This is crucial for fast location-based searches ("5 min away")
+UserSchema.index({ currentLocation: "2dsphere" });
+// --- END NEW INDEX ---
+
 UserSchema.pre("save", async function (next) {
   const user = this as IUser & { isModified: (k: string) => boolean };
   if (!user.isModified("passwordHash")) return next();
@@ -76,8 +98,6 @@ UserSchema.methods.comparePassword = function (plain: string) {
   const self = this as IUser;
   return bcrypt.compare(plain, self.passwordHash);
 };
-
-// ✂️ Removed: UserSchema.index({ email: 1 }, { unique: true });
 
 export const User =
   mongoose.models.User || mongoose.model<IUser>("User", UserSchema);
