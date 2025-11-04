@@ -7,13 +7,22 @@ import { toJSON } from "./plugins/toJSON";
 
 type ObjectId = Types.ObjectId;
 
+// 1. Interface for the plain passenger object (no change)
 export interface IRidePassenger {
   userId: ObjectId;
   status: PassengerStatus;
   updatedAt: Date;
+  pickupAddress?: string;
+  pickupLocation?: {
+    type: "Point";
+    coordinates: [number, number];
+  };
 }
 
-export interface IRide extends Document {
+// 2. Interface for the plain ride object (POJO)
+// --- THIS IS THE FIX: I have removed the '_id' field ---
+// Mongoose's 'Document' type will provide this automatically.
+export interface IRide {
   eventId?: ObjectId;
   driverId: ObjectId;
   vehicle: { name: string; capacity: number };
@@ -25,7 +34,12 @@ export interface IRide extends Document {
   updatedAt: Date;
 }
 
-const RideSchema = new Schema<IRide>(
+// 3. This is the Mongoose Document interface.
+// It now correctly combines IRide and Document without conflict.
+export interface IRideDocument extends IRide, Document {}
+
+// 4. The Schema is typed with the Document interface
+const RideSchema = new Schema<IRideDocument>(
   {
     eventId: { type: Schema.Types.ObjectId, ref: "Event" },
     driverId: { type: Schema.Types.ObjectId, ref: "User", required: true },
@@ -38,11 +52,24 @@ const RideSchema = new Schema<IRide>(
     passengers: [
       {
         userId: { type: Schema.Types.ObjectId, ref: "User", required: true },
-        status: { type: String, enum: Object.values(PassengerStatus), default: PassengerStatus.Requested },
+        status: {
+          type: String,
+          enum: Object.values(PassengerStatus),
+          default: PassengerStatus.Requested,
+        },
         updatedAt: { type: Date, default: Date.now },
+        pickupAddress: String,
+        pickupLocation: {
+          type: { type: String, enum: ["Point"], default: "Point" },
+          coordinates: { type: [Number], default: [0, 0] },
+        },
       },
     ],
-    status: { type: String, enum: Object.values(RideStatus), default: RideStatus.Active },
+    status: {
+      type: String,
+      enum: Object.values(RideStatus),
+      default: RideStatus.Active,
+    },
   },
   { timestamps: true }
 );
@@ -52,4 +79,6 @@ toJSON(RideSchema);
 RideSchema.index({ driverId: 1, status: 1 });
 RideSchema.index({ eventId: 1, status: 1 });
 
-export const Ride = mongoose.models.Ride || mongoose.model<IRide>("Ride", RideSchema);
+// 5. The model uses the Document interface
+export const Ride =
+  mongoose.models.Ride || mongoose.model<IRideDocument>("Ride", RideSchema);

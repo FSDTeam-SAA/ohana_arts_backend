@@ -2,6 +2,8 @@ import { asyncHandler } from "../utils/asyncHandler";
 import { ok, created } from "../utils/ApiResponse";
 import { Chat, Message } from "../models";
 import { uploadBufferToCloudinary } from "../utils/cloudinaryUpload";
+// --- THIS IS THE FIX ---
+// We explicitly import the *full* type from the correct file.
 import type { SocketHelpers } from "../socket";
 import { Request, Response } from "express";
 
@@ -14,14 +16,18 @@ export const ensureEventChat = asyncHandler(async (req: any, res: Response) => {
   res.json(ok(chat));
 });
 
-export const listMessages = asyncHandler(async (req: Request, res: Response) => {
-  const msgs = await Message.find({ chatId: req.params.chatId }).sort({ createdAt: -1 }).limit(100);
-  res.json(ok(msgs.reverse()));
-});
+export const listMessages = asyncHandler(
+  async (req: Request, res: Response) => {
+    const msgs = await Message.find({ chatId: req.params.chatId })
+      .sort({ createdAt: -1 })
+      .limit(100);
+    res.json(ok(msgs.reverse()));
+  }
+);
 
+// This function's parameter 'ioHelpers: SocketHelpers' MUST use the new type.
 export const sendMessage =
-  (ioHelpers: SocketHelpers) =>
-  async (req: any, res: any) => {
+  (ioHelpers: SocketHelpers) => async (req: any, res: any) => {
     const { text } = req.body;
     let attachments: string[] = [];
     let attachmentPids: string[] = [];
@@ -39,9 +45,10 @@ export const sendMessage =
       senderId: req.user.id,
       text,
       attachments,
-      attachmentsPublicIds: attachmentPids
+      attachmentsPublicIds: attachmentPids,
     });
 
+    // This broadcastMessage function returns 'void' in the new type.
     ioHelpers.broadcastMessage(req.params.chatId, msg.toJSON());
     res.json(created(msg));
   };

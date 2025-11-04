@@ -6,11 +6,13 @@ import { User } from "../models";
 import { Notification } from "../models";
 import { Badge } from "../types/enums";
 import { Types } from "mongoose";
-import { initSocket } from "../socket";
+import { SocketHelpers } from "../socket"; // <-- Imports the NEW, correct type
 
-let socketHelpers: ReturnType<typeof initSocket>;
+// This variable will hold the helpers
+let socketHelpers: SocketHelpers;
 
-export const setSocketHelpers = (helpers: ReturnType<typeof initSocket>) => {
+// This function's parameter 'helpers: SocketHelpers' now uses the NEW type
+export const setSocketHelpers = (helpers: SocketHelpers) => {
   socketHelpers = helpers;
 };
 
@@ -20,23 +22,25 @@ export const myRewards = asyncHandler(async (req: any, res: Response) => {
 });
 
 const POINT_RULES = {
-   CREATE_RALLY: {points: 50, reason: "Create a Rally"}, JOIN_RALLY: {points: 5, reason: "Join a Rally"}, DESIGNATED_DRIVER: {points: 15, reason: "Designated Driver"},
-}
+  CREATE_RALLY: { points: 50, reason: "Create a Rally" },
+  JOIN_RALLY: { points: 5, reason: "Join a Rally" },
+  DESIGNATED_DRIVER: { points: 15, reason: "Designated Driver" },
+};
 
 const BADGE_THRESOLDS = {
   [Badge.Bronze]: 0,
   [Badge.Silver]: 100,
   [Badge.Gold]: 500,
-}
+};
 
-function getBadgeFromPoints(points: number): Badge{
-  if(points>=BADGE_THRESOLDS[Badge.Gold]){
-    return Badge.Gold
+function getBadgeFromPoints(points: number): Badge {
+  if (points >= BADGE_THRESOLDS[Badge.Gold]) {
+    return Badge.Gold;
   }
-  if(points>=BADGE_THRESOLDS[Badge.Silver]){
-    return Badge.Silver
+  if (points >= BADGE_THRESOLDS[Badge.Silver]) {
+    return Badge.Silver;
   }
-  return Badge.Bronze
+  return Badge.Bronze;
 }
 
 export const awardPoints = async (
@@ -59,10 +63,12 @@ export const awardPoints = async (
   // 2. Update the User model (for the badge and points)
   const newBadge = getBadgeFromPoints(userReward.points);
   const user = await User.findById(userId);
+  let userRewardPoints = 0; // Default value
 
   if (user) {
     user.rewardPoints = userReward.points;
     user.badge = newBadge;
+    userRewardPoints = user.rewardPoints; // Store points
     await user.save();
   }
 
@@ -78,8 +84,15 @@ export const awardPoints = async (
   // 4. Broadcast the notification and points update in real-time
   if (socketHelpers) {
     socketHelpers.notifyUser(userId.toString(), notif.toJSON());
-    socketHelpers.notifyUser(userId.toString(), { type: 'points_update', points: user.rewardPoints });
+    socketHelpers.notifyUser(userId.toString(), {
+      type: "points_update",
+      points: userRewardPoints, // Use the stored points
+    });
   }
-  
-  return { newPoints: user.rewardPoints, newBadge, awardedPoints: ruleDetails.points };
+
+  return {
+    newPoints: userRewardPoints,
+    newBadge,
+    awardedPoints: ruleDetails.points,
+  };
 };
