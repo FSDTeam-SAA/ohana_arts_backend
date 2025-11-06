@@ -6,6 +6,7 @@ import {
   register,
   changePassword,
 } from "../controllers/auth.controller";
+import { getAllUsers } from "../controllers/user.controller";
 import { auth } from "../middleware/auth";
 const router = Router();
 
@@ -13,5 +14,6 @@ router.post("/register", authLimiter, register);
 router.post("/login", authLimiter, login);
 router.get("/me", auth, me);
 router.post("/changePassword", auth, changePassword);
+router.get("/allUsers", getAllUsers);
 
 export default router;

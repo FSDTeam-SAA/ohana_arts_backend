@@ -6,6 +6,16 @@ import { deleteByPublicId } from "../utils/cloudinaryDelete";
 import { Response, Request } from "express"; // <-- Import Request
 import { ApiError } from "../utils/ApiError"; // <-- Import ApiError
 import { StatusCodes } from "http-status-codes"; // <-- Import StatusCodes
+import { error } from "console";
+
+export const getAllUsers = asyncHandler(async (req: Request, res: Response) => {
+  const allUser = await User.find({});
+  if (!allUser) {
+    throw new ApiError(StatusCodes.NOT_FOUND, "No user found");
+  }
+
+  res.json(ok(allUser));
+});
 
 export const updateProfile = asyncHandler(async (req: any, res: Response) => {
   const { name, bio, phone } = req.body; // <-- Added phone
