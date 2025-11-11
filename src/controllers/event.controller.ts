@@ -479,3 +479,23 @@ export const listMyInvitations = asyncHandler(
     res.json(ok(events));
   }
 );
+
+// GET /api/events/:id/attendees
+export const listAttendees = asyncHandler(
+  async (req: Request, res: Response) => {
+    const event = await Event.findById(req.params.id)
+      .populate("attendees.userId", "name profilePhoto") // Populate user details
+      .select("attendees"); // Only select the attendees field
+
+    if (!event) {
+      throw new ApiError(StatusCodes.NOT_FOUND, "Event not found");
+    }
+
+    // Filter for attendees who have RSVP'd 'Yes'
+    const attending = event.attendees.filter(
+      (a: any) => a.status === RSVPStatus.Yes
+    );
+
+    res.json(ok(attending));
+  }
+);

@@ -14,6 +14,7 @@ import {
   quickRally,
   deleteEvent,
   listMyInvitations, // <- add
+  listAttendees,
 } from "../controllers/event.controller";
 // import { myInvitations } from "../controllers/invitation.controller"; // REMOVE
 import { setCheckIn, listCheckIns } from "../controllers/checkin.controller";
@@ -38,6 +39,9 @@ router.delete("/:id", auth, deleteEvent);
 router.post("/:id/rsvp", auth, rsvp);
 router.post("/:id/invite", auth, inviteUser);
 router.post("/:id/invite/respond", auth, respondInvite); // NEW endpoint
+
+// GET /api/events/:id/attendees
+router.get("/:id/attendees", auth, listAttendees);
 
 // Stops + Check-ins
 router.post("/:id/stops", auth, createStop);
