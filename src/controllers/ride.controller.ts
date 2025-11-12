@@ -14,9 +14,6 @@ export const setRideSocketHelpers = (helpers: SocketHelpers) => {
   socketHelpers = helpers;
 };
 
-/**
- * Calculates the distance between two GeoJSON points in kilometers.
- */
 function calculateDistance(coords1: number[], coords2: number[]): number {
   const [lng1, lat1] = coords1;
   const [lng2, lat2] = coords2;
@@ -117,8 +114,28 @@ export const listRides = asyncHandler(async (req: any, res: Response) => {
   res.json(ok(availableRides));
 });
 
+// --- THIS FUNCTION IS UPDATED ---
 export const requestSeat = asyncHandler(async (req: any, res: Response) => {
   const { pickupLat, pickupLng, pickupAddress } = req.body;
+
+  // --- NEW VALIDATION ---
+  if (pickupLat === undefined || pickupLng === undefined) {
+    throw new ApiError(
+      StatusCodes.BAD_REQUEST,
+      "Missing latitude or longitude in request body"
+    );
+  }
+
+  const lat = Number(pickupLat);
+  const lng = Number(pickupLng);
+
+  if (isNaN(lat) || isNaN(lng)) {
+    throw new ApiError(
+      StatusCodes.BAD_REQUEST,
+      "Invalid latitude or longitude. Must be numbers."
+    );
+  }
+  // --- END VALIDATION ---
 
   const update = {
     $addToSet: {
@@ -128,7 +145,7 @@ export const requestSeat = asyncHandler(async (req: any, res: Response) => {
         pickupAddress: pickupAddress,
         pickupLocation: {
           type: "Point",
-          coordinates: [Number(pickupLng), Number(pickupLat)],
+          coordinates: [lng, lat], // Use validated 'lng' and 'lat'
         },
       },
     },
@@ -149,6 +166,7 @@ export const requestSeat = asyncHandler(async (req: any, res: Response) => {
 
   res.json(ok(ride));
 });
+// --- END OF UPDATED FUNCTION ---
 
 export const setPassengerStatus = asyncHandler(
   async (req: Request, res: Response) => {
@@ -219,22 +237,17 @@ export const getMyActiveDriverRide = asyncHandler(
       return res.json(ok(null));
     }
 
-    // --- THIS IS THE FIX ---
-    // We access the plain properties of the sub-document (p)
-    // The parent 'activeRide.toJSON()' will handle the rest.
     const passengersWithLocation = activeRide.passengers.map(
       (p: IRidePassenger) => {
         return {
-          userId: p.userId, // This is populated
+          userId: p.userId,
           status: p.status,
           updatedAt: p.updatedAt,
           pickupLocation: p.pickupLocation,
-          // Add the 'pickupAddress' with the default
           pickupAddress: p.pickupAddress || "No address provided",
         };
       }
     );
-    // --- END OF FIX ---
 
     res.json(
       ok({ ...activeRide.toJSON(), passengers: passengersWithLocation })
