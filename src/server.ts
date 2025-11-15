@@ -5,6 +5,7 @@ import { connectDB } from "./config/db";
 import { initSocket } from "./socket"; // Assuming socket.ts is in src/
 import { setSocketHelpers } from "./controllers/reward.controller";
 import { setRideSocketHelpers } from "./controllers/ride.controller";
+import { setChatSocketHelpers } from "./controllers/chat.controller"; // <-- 1. IMPORT NEW FUNCTION
 
 const PORT = Number(process.env.PORT || 3000);
 
@@ -17,6 +18,7 @@ async function main() {
   // Pass helpers to the controllers that need them
   setSocketHelpers(ioHelpers);
   setRideSocketHelpers(ioHelpers);
+  setChatSocketHelpers(ioHelpers); // <-- 2. CALL NEW FUNCTION
 
   const app = buildApp(ioHelpers);
   server.on("request", app);
