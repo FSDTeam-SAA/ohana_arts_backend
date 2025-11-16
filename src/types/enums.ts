@@ -3,6 +3,13 @@ export enum Badge {
   Silver = "Silver",
   Gold = "Gold",
   Emerald = "Emerald",
+  Sapphire = "Sapphire",
+  Roby = "Ruby",
+  Amethyst = "Amethyst",
+  Diamond = "Diamond",
+  PinkDiamond = "Pink Diamond",
+  GalaxyOpal = "Galaxy Opal",
+  DarkMatter = "Dark Matter"
 }
 
 export enum RSVPStatus {
