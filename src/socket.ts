@@ -1,6 +1,10 @@
 import { Server, Socket } from "socket.io";
 import { Server as HttpServer } from "http";
 import jwt from "jsonwebtoken";
+// --- 1. IMPORT MODELS NEEDED FOR CHAT ---
+import { Message } from "./models/Message";
+import { Chat } from "./models/Chat";
+//import { Message, Chat } from "../models";
 
 // ---
 // These maps help us track who is who and where they are
@@ -8,6 +12,8 @@ import jwt from "jsonwebtoken";
 const userSockets = new Map<string, string>();
 // <socket.id, rideId> - Tracks which room a socket is in
 const socketRideRooms = new Map<string, string>();
+// <socket.id, chatId> - Tracks which chat room a socket is in
+const socketChatRooms = new Map<string, string>();
 // ---
 
 export const initSocket = (httpServer: HttpServer) => {
@@ -20,15 +26,11 @@ export const initSocket = (httpServer: HttpServer) => {
 
   // --- Socket.io Authentication Middleware (UPDATED) ---
   io.use((socket, next) => {
-    // --- NEW: FLEXIBLE TOKEN CHECK ---
-    // Try to get token from the 'auth' object (for modern clients)
     let token = socket.handshake.auth.token;
 
-    // If not found, try to get it from the query parameters (for Postman)
     if (!token && socket.handshake.query.token) {
       token = socket.handshake.query.token as string;
     }
-    // --- END OF NEW LOGIC ---
 
     if (!token) {
       return next(new Error("Authentication error: No token provided"));
@@ -55,7 +57,56 @@ export const initSocket = (httpServer: HttpServer) => {
     // Track this user's socket
     userSockets.set(userId, socket.id);
 
-    // --- Real-time Location Listener ---
+    // --- CHAT LOGIC ---
+    // This is the "keyword" to join a room
+    socket.on("chat:join", (chatId: string) => {
+      // Leave any old chat room first
+      const oldRoom = socketChatRooms.get(socket.id);
+      if (oldRoom) {
+        socket.leave(oldRoom);
+      }
+      // Join the new chat room
+      socket.join(chatId);
+      socketChatRooms.set(socket.id, chatId); // Track it
+      console.log(`User ${userId} joined chat room: ${chatId}`);
+    });
+
+    // This is the "keyword" to leave a room
+    socket.on("chat:leave", (chatId: string) => {
+      socket.leave(chatId);
+      socketChatRooms.delete(socket.id);
+      console.log(`User ${userId} left chat room: ${chatId}`);
+    });
+
+    // This is the "keyword" to send a message
+    socket.on(
+      "message:send",
+      async (payload: {
+        chatId: string;
+        text?: string;
+        attachments?: string[];
+      }) => {
+        if (!payload.chatId) return; // Ignore if no chatId
+
+        const msg = await Message.create({
+          chatId: payload.chatId,
+          senderId: userId,
+          text: payload.text,
+          attachments: payload.attachments || [],
+        });
+
+        // Also update the chat's last message time
+        await Chat.findByIdAndUpdate(payload.chatId, {
+          lastMessageAt: new Date(),
+        });
+
+        // This emits the "keyword" to receive
+        io.to(payload.chatId).emit("chat:message:new", msg.toJSON());
+      }
+    );
+    // --- END OF CHAT LOGIC ---
+
+    // --- RIDE LOGIC ---
     socket.on("location:update", (data: { lat: number; lng: number }) => {
       const rideId = socketRideRooms.get(socket.id);
 
@@ -73,44 +124,52 @@ export const initSocket = (httpServer: HttpServer) => {
       console.log(`Socket disconnected: ${socket.id} for user: ${userId}`);
       userSockets.delete(userId);
       socketRideRooms.delete(socket.id);
+      socketChatRooms.delete(socket.id); // Clean up chat
     });
   });
 
   // --- Helper Functions ---
   const notifyUser = (userId: string, data: any) => {
-    const socketId = userSockets.get(userId);
-    if (socketId) {
-      io.to(socketId).emit("notification", data);
+    // FIX: Renamed variable and added guard clause
+    const socketIdToNotify = userSockets.get(userId);
+    if (!socketIdToNotify) {
+      return; // User is not connected
     }
+    io.to(socketIdToNotify).emit("notification", data);
   };
 
   const broadcastMessage = (chatId: string, message: any) => {
+    // This is called by your API controller
     io.to(chatId).emit("chat:message:new", message);
   };
 
   const joinRideRoom = (userId: string, rideId: string) => {
-    const socketId = userSockets.get(userId);
-    if (socketId) {
-      const socket = io.sockets.sockets.get(socketId);
-      if (socket) {
-        socket.join(rideId);
-        socketRideRooms.set(socketId, rideId);
-        console.log(`User ${userId} joined ride room: ${rideId}`);
-      }
+    // FIX: Renamed variable and added guard clause
+    const socketIdToJoin = userSockets.get(userId);
+    if (!socketIdToJoin) {
+      return; // User is not connected
+    }
+    const socket = io.sockets.sockets.get(socketIdToJoin);
+    if (socket) {
+      socket.join(rideId);
+      socketRideRooms.set(socketIdToJoin, rideId);
+      console.log(`User ${userId} joined ride room: ${rideId}`);
     }
   };
 
   const leaveRideRoom = (userId: string) => {
-    const socketId = userSockets.get(userId);
-    if (socketId) {
-      const rideId = socketRideRooms.get(socketId);
-      if (rideId) {
-        const socket = io.sockets.sockets.get(socketId);
-        if (socket) {
-          socket.leave(rideId);
-          socketRideRooms.delete(socketId);
-          console.log(`User ${userId} left ride room: ${rideId}`);
-        }
+    // FIX: Renamed variable and added guard clause
+    const socketIdToLeave = userSockets.get(userId);
+    if (!socketIdToLeave) {
+      return; // User is not connected
+    }
+    const rideId = socketRideRooms.get(socketIdToLeave);
+    if (rideId) {
+      const socket = io.sockets.sockets.get(socketIdToLeave);
+      if (socket) {
+        socket.leave(rideId);
+        socketRideRooms.delete(socketIdToLeave);
+        console.log(`User ${userId} left ride room: ${rideId}`);
       }
     }
   };
