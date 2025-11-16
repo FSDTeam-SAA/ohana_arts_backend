@@ -75,14 +75,16 @@ export const createEvent = asyncHandler(async (req: any, res: Response) => {
   }
 
   const saved = await Event.create(event);
-  // This chat logic is for the 1-on-1 event-scoped chat model
-  // We're just creating a placeholder here.
-  const chat = await Chat.create({
-    eventId: saved._id,
-    members: [req.user.id], // This chat is invalid for 1-on-1
-  });
-  saved.chatId = chat._id; // This link is probably no longer needed
-  await saved.save();
+
+  // --- THESE LINES ARE NOW REMOVED ---
+  // const chat = await Chat.create({
+  //   eventId: saved._id,
+  //   members: [req.user.id],
+  // });
+  // saved.chatId = chat._id;
+  // await saved.save();
+  // --- END OF REMOVAL ---
+
   await CheckIn.create({
     eventId: saved._id,
     userId: req.user.id,
@@ -377,12 +379,15 @@ export const quickRally = asyncHandler(async (req: any, res: Response) => {
           : undefined,
     },
   });
-  const chat = await Chat.create({
-    eventId: event._id,
-    members: [req.user.id],
-  });
-  event.chatId = chat._id;
-  await event.save();
+
+  // --- THESE LINES ARE NOW REMOVED ---
+  // const chat = await Chat.create({
+  //   eventId: event._id,
+  //   members: [req.user.id],
+  // });
+  // event.chatId = chat._id;
+  // await event.save();
+  // --- END OF REMOVAL ---
 
   const qr = await QuickRally.create({
     eventId: event._id,
@@ -403,6 +408,7 @@ export const deleteEvent = asyncHandler(async (req: any, res: Response) => {
 
   const session = await mongoose.startSession();
   await session.withTransaction(async () => {
+    // This logic is now correct, it finds all chats for the event
     const chats = await Chat.find({ eventId: event._id }).session(session);
     for (const chat of chats) {
       const msgs = await Message.find({ chatId: chat._id }).session(session);

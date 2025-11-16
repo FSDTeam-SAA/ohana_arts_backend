@@ -6,7 +6,7 @@ import { Request, Response } from "express";
 import { ApiError } from "../utils/ApiError";
 import { StatusCodes } from "http-status-codes";
 import { uploadBufferToCloudinary } from "../utils/cloudinaryUpload";
-import { Types } from "mongoose"; // <-- This is needed
+import { Types } from "mongoose";
 
 let socketHelpers: SocketHelpers;
 
@@ -81,17 +81,22 @@ export const ensureOneOnOneChat = asyncHandler(
       );
     }
 
-    const members = [currentUserId, otherUserId];
+    // --- 1. SORT THE MEMBERS ARRAY ---
+    // This ensures [userA, userB] is the same as [userB, userA]
+    const members = [currentUserId, otherUserId].sort();
 
     const chat = await Chat.findOneAndUpdate(
+      // --- 2. THE QUERY IS NOW SIMPLE ---
+      // Find the doc that matches this exact eventId and sorted members list
       {
         eventId: eventId,
-        members: { $all: members },
+        members: members,
       },
+      // --- 3. $setOnInsert IS SIMPLIFIED ---
+      // The query fields (eventId, members) are added automatically on insert.
+      // We only need to add fields that are *not* in the query.
       {
         $setOnInsert: {
-          eventId: eventId,
-          members: members,
           lastMessageAt: new Date(),
         },
       },
@@ -154,11 +159,9 @@ export const sendMessage =
     ioHelpers.broadcastMessage(chatId, msg.toJSON());
 
     if (chat && socketHelpers) {
-      // --- THIS IS THE FIX ---
       const otherUser = chat.members.find(
         (member: Types.ObjectId) => member.toString() !== req.user.id
       );
-      // --- END OF FIX ---
       if (otherUser) {
         socketHelpers.notifyUser(otherUser.toString(), {
           type: "NEW_MESSAGE",
