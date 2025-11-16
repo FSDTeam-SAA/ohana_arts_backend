@@ -13,8 +13,9 @@ import {
   Payment,
   Ride,
   Task,
+  IEventAttendee,
 } from "../models";
-import { RSVPStatus } from "../types/enums"; // <-- RSVPStatus is needed
+import { RSVPStatus } from "../types/enums";
 import { uploadBufferToCloudinary } from "../utils/cloudinaryUpload";
 import { nanoid } from "nanoid";
 import mongoose from "mongoose";
@@ -39,8 +40,6 @@ export const createEvent = asyncHandler(async (req: any, res: Response) => {
   if (!title || !dateTime)
     throw new ApiError(StatusCodes.BAD_REQUEST, "title & dateTime required");
 
-  // --- NEW VALIDATION ---
-  // Check if the event date is in the past
   const eventDate = dayjs(dateTime);
   const today = dayjs().startOf("day");
 
@@ -50,13 +49,12 @@ export const createEvent = asyncHandler(async (req: any, res: Response) => {
       "Event date cannot be in the past"
     );
   }
-  // --- END NEW VALIDATION ---
 
   const event: any = {
     title,
     description,
     location: { name: locationName, address },
-    dateTime: eventDate.toDate(), // Use the validated dayjs object
+    dateTime: eventDate.toDate(),
     capacity: parseNumber(capacity),
     fee: parseNumber(fee),
     createdBy: req.user.id,
@@ -77,12 +75,13 @@ export const createEvent = asyncHandler(async (req: any, res: Response) => {
   }
 
   const saved = await Event.create(event);
+  // This chat logic is for the 1-on-1 event-scoped chat model
+  // We're just creating a placeholder here.
   const chat = await Chat.create({
     eventId: saved._id,
-    members: [req.user.id],
-    lastMessageAt: new Date(),
+    members: [req.user.id], // This chat is invalid for 1-on-1
   });
-  saved.chatId = chat._id;
+  saved.chatId = chat._id; // This link is probably no longer needed
   await saved.save();
   await CheckIn.create({
     eventId: saved._id,
@@ -109,13 +108,10 @@ export const listEvents = asyncHandler(async (req: any, res: Response) => {
             { createdBy: req.user.id },
             {
               attendees: {
-                // --- MODIFIED LOGIC ---
-                // Only show if user RSVP'd Yes or Maybe, not Pending
                 $elemMatch: {
                   userId: req.user.id,
                   status: { $in: [RSVPStatus.Yes, RSVPStatus.Maybe] },
                 },
-                // --- END MODIFIED LOGIC ---
               },
             },
           ],
@@ -123,8 +119,6 @@ export const listEvents = asyncHandler(async (req: any, res: Response) => {
       ],
     };
   } else if (scope === "past") {
-    // Existing logic:
-    filter = { dateTime: { $lt: now.toDate() } };
     filter = {
       $and: [
         { dateTime: { $lt: now.toDate() } },
@@ -133,13 +127,10 @@ export const listEvents = asyncHandler(async (req: any, res: Response) => {
             { createdBy: req.user.id },
             {
               attendees: {
-                // --- MODIFIED LOGIC ---
-                // Only show if user RSVP'd Yes or Maybe, not Pending
                 $elemMatch: {
                   userId: req.user.id,
                   status: { $in: [RSVPStatus.Yes, RSVPStatus.Maybe] },
                 },
-                // --- END MODIFIED LOGIC ---
               },
             },
           ],
@@ -147,13 +138,6 @@ export const listEvents = asyncHandler(async (req: any, res: Response) => {
       ],
     };
   } else if (scope === "live") {
-    // Existing logic:
-    filter = {
-      dateTime: {
-        $gte: now.startOf("day").toDate(),
-        $lte: now.endOf("day").toDate(),
-      },
-    };
     filter = {
       $and: [
         {
@@ -167,13 +151,10 @@ export const listEvents = asyncHandler(async (req: any, res: Response) => {
             { createdBy: req.user.id },
             {
               attendees: {
-                // --- MODIFIED LOGIC ---
-                // Only show if user RSVP'd Yes or Maybe, not Pending
                 $elemMatch: {
                   userId: req.user.id,
                   status: { $in: [RSVPStatus.Yes, RSVPStatus.Maybe] },
                 },
-                // --- END MODIFIED LOGIC ---
               },
             },
           ],
@@ -183,7 +164,6 @@ export const listEvents = asyncHandler(async (req: any, res: Response) => {
   } else if (scope === "invitations") {
     filter = {
       attendees: {
-        // This logic remains correct, only showing 'Pending'
         $elemMatch: { userId: req.user.id, status: RSVPStatus.Pending },
       },
     };
@@ -198,7 +178,11 @@ export const listEvents = asyncHandler(async (req: any, res: Response) => {
 });
 
 export const getEvent = asyncHandler(async (req: Request, res: Response) => {
-  const event = await Event.findById(req.params.id);
+  const event = await Event.findById(req.params.id).populate(
+    "attendees.userId",
+    "name profilePhoto"
+  );
+
   if (!event) throw new ApiError(StatusCodes.NOT_FOUND, "Event not found");
   res.json(ok(event));
 });
@@ -208,7 +192,6 @@ export const updateEvent = asyncHandler(async (req: any, res: Response) => {
   if (patch.capacity) patch.capacity = Number(patch.capacity);
   if (patch.fee) patch.fee = Number(patch.fee);
 
-  // --- NEW VALIDATION ---
   if (patch.dateTime) {
     const eventDate = dayjs(patch.dateTime);
     const today = dayjs().startOf("day");
@@ -218,9 +201,8 @@ export const updateEvent = asyncHandler(async (req: any, res: Response) => {
         "Event date cannot be in the past"
       );
     }
-    patch.dateTime = eventDate.toDate(); // Use the validated dayjs object
+    patch.dateTime = eventDate.toDate();
   }
-  // --- END NEW VALIDATION ---
 
   const existing = await Event.findOne({
     _id: req.params.id,
@@ -266,12 +248,9 @@ export const rsvp = asyncHandler(async (req: any, res: Response) => {
   }
   await event.save();
 
-  // --- LOGIC CHANGE ---
-  // Award points for *joining* (RSVP 'Yes'), not just any RSVP
   if (status === RSVPStatus.Yes) {
     await awardPoints(req.user.id, "JOIN_RALLY", event._id);
   }
-  // --- END LOGIC CHANGE ---
 
   res.json(ok(event.attendees));
 });
@@ -292,7 +271,6 @@ export const inviteUser = asyncHandler(async (req: any, res: Response) => {
   );
 
   if (existing) {
-    // If already invited and still pending, be idempotent
     if (existing.status === RSVPStatus.Pending) {
       return res.status(StatusCodes.OK).json(
         ok({
@@ -301,7 +279,6 @@ export const inviteUser = asyncHandler(async (req: any, res: Response) => {
         })
       );
     }
-    // Otherwise keep their current RSVP (Yes/Maybe/No)
   } else {
     event.attendees.push({
       userId,
@@ -313,9 +290,6 @@ export const inviteUser = asyncHandler(async (req: any, res: Response) => {
     await event.save();
   }
 
-  // optional: socket notification here
-  // req.io?.toUser(String(userId)).emit("notification:new", { type: "INVITE", eventId });
-
   res.status(StatusCodes.CREATED).json(
     created({
       eventId,
@@ -325,7 +299,6 @@ export const inviteUser = asyncHandler(async (req: any, res: Response) => {
   );
 });
 
-// POST /api/events/:id/invite/respond  { action: "Accept" | "Decline" }
 export const respondInvite = asyncHandler(async (req: any, res: Response) => {
   const { id: eventId } = req.params;
   const { action } = req.body as { action: "Accept" | "Decline" };
@@ -351,15 +324,9 @@ export const respondInvite = asyncHandler(async (req: any, res: Response) => {
   me.updatedAt = new Date();
   await event.save();
 
-  // --- LOGIC CHANGE ---
-  // Award points for accepting an invite
   if (me.status === RSVPStatus.Yes) {
     await awardPoints(req.user.id, "JOIN_RALLY", event._id);
   }
-  // --- END LOGIC CHANGE ---
-
-  // optional: notify host
-  // req.io?.toUser(String(event.createdBy)).emit("notification:new", { type: "INVITE_RESPONSE", eventId, status: me.status });
 
   res.json(ok({ eventId, status: me.status }));
 });
@@ -397,7 +364,7 @@ export const quickRally = asyncHandler(async (req: any, res: Response) => {
   const event = await Event.create({
     title: "Quick Rally",
     description: "Auto-generated",
-    dateTime: new Date(), // Quick Rallies are always 'now'
+    dateTime: new Date(),
     createdBy: req.user.id,
     attendees: [{ userId: req.user.id, status: RSVPStatus.Yes }],
     inviteCode: nanoid(8),
@@ -436,8 +403,8 @@ export const deleteEvent = asyncHandler(async (req: any, res: Response) => {
 
   const session = await mongoose.startSession();
   await session.withTransaction(async () => {
-    const chat = await Chat.findOne({ eventId: event._id }).session(session);
-    if (chat) {
+    const chats = await Chat.find({ eventId: event._id }).session(session);
+    for (const chat of chats) {
       const msgs = await Message.find({ chatId: chat._id }).session(session);
       for (const m of msgs) {
         if (m.attachmentsPublicIds?.length) {
@@ -448,7 +415,6 @@ export const deleteEvent = asyncHandler(async (req: any, res: Response) => {
       await Chat.deleteOne({ _id: chat._id }).session(session);
     }
 
-    // await Invitation.deleteMany({ eventId: event._id }).session(session);
     await BarHopStop.deleteMany({ eventId: event._id }).session(session);
     await QuickRally.deleteMany({ eventId: event._id }).session(session);
     await CheckIn.deleteMany({ eventId: event._id }).session(session);
@@ -480,20 +446,18 @@ export const listMyInvitations = asyncHandler(
   }
 );
 
-// GET /api/events/:id/attendees
 export const listAttendees = asyncHandler(
   async (req: Request, res: Response) => {
     const event = await Event.findById(req.params.id)
-      .populate("attendees.userId", "name profilePhoto") // Populate user details
-      .select("attendees"); // Only select the attendees field
+      .populate("attendees.userId", "name profilePhoto")
+      .select("attendees");
 
     if (!event) {
       throw new ApiError(StatusCodes.NOT_FOUND, "Event not found");
     }
 
-    // Filter for attendees who have RSVP'd 'Yes'
     const attending = event.attendees.filter(
-      (a: any) => a.status === RSVPStatus.Yes
+      (a: IEventAttendee) => a.status === RSVPStatus.Yes
     );
 
     res.json(ok(attending));
