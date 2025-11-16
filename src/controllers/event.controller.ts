@@ -76,15 +76,6 @@ export const createEvent = asyncHandler(async (req: any, res: Response) => {
 
   const saved = await Event.create(event);
 
-  // --- THESE LINES ARE NOW REMOVED ---
-  // const chat = await Chat.create({
-  //   eventId: saved._id,
-  //   members: [req.user.id],
-  // });
-  // saved.chatId = chat._id;
-  // await saved.save();
-  // --- END OF REMOVAL ---
-
   await CheckIn.create({
     eventId: saved._id,
     userId: req.user.id,
@@ -361,14 +352,51 @@ export const listStops = asyncHandler(async (req: Request, res: Response) => {
   res.json(ok(stops));
 });
 
+// --- THIS FUNCTION IS NOW UPDATED ---
 export const quickRally = asyncHandler(async (req: any, res: Response) => {
-  const { locationName, lat, lng, address } = req.body;
+  const {
+    title,
+    locationName,
+    lat,
+    lng,
+    address,
+    invitedUserIds, // <-- 1. Get invited user IDs
+  } = req.body;
+
+  if (!title) {
+    throw new ApiError(
+      StatusCodes.BAD_REQUEST,
+      "Event name (title) is required"
+    );
+  }
+
+  // 2. Build the attendees list
+  const creatorAttendee = {
+    userId: req.user.id,
+    status: RSVPStatus.Yes,
+    updatedAt: new Date(),
+  };
+
+  let invitedAttendees: any[] = [];
+  if (Array.isArray(invitedUserIds) && invitedUserIds.length > 0) {
+    invitedAttendees = invitedUserIds.map((userId: string) => ({
+      userId: userId,
+      status: RSVPStatus.Pending,
+      invitedBy: req.user.id,
+      invitedAt: new Date(),
+      updatedAt: new Date(),
+    }));
+  }
+
+  const allAttendees = [creatorAttendee, ...invitedAttendees];
+  // --- End of new attendee logic ---
+
   const event = await Event.create({
-    title: "Quick Rally",
-    description: "Auto-generated",
-    dateTime: new Date(),
+    title: title, // <-- 3. Use the title from req.body
+    description: "Spontaneous Hangout", // <-- Updated description
+    dateTime: new Date(), // This is correct, makes it a "Live" event
     createdBy: req.user.id,
-    attendees: [{ userId: req.user.id, status: RSVPStatus.Yes }],
+    attendees: allAttendees, // <-- 4. Use the new allAttendees list
     inviteCode: nanoid(8),
     location: {
       name: locationName,
@@ -380,7 +408,7 @@ export const quickRally = asyncHandler(async (req: any, res: Response) => {
     },
   });
 
-  // --- THESE LINES ARE NOW REMOVED ---
+  // 5. This chat logic is no longer needed, we removed it
   // const chat = await Chat.create({
   //   eventId: event._id,
   //   members: [req.user.id],
@@ -393,10 +421,11 @@ export const quickRally = asyncHandler(async (req: any, res: Response) => {
     eventId: event._id,
     hostId: req.user.id,
     location: event.location,
-    invitedUsers: [],
+    invitedUsers: invitedUserIds || [], // <-- 6. Save the invited users
   });
   res.status(StatusCodes.CREATED).json(created({ event, quickRally: qr }));
 });
+// --- END OF UPDATE ---
 
 export const deleteEvent = asyncHandler(async (req: any, res: Response) => {
   const event = await Event.findOne({
