@@ -5,7 +5,6 @@ import { ApiError } from "../utils/ApiError";
 import { StatusCodes } from "http-status-codes";
 import { Client, PlaceType1 } from "@googlemaps/google-maps-services-js";
 
-// 1. Initialize the client with your API key
 const gmapsClient = new Client({});
 const GOOGLE_API_KEY = process.env.GOOGLE_MAPS_API_KEY!;
 
@@ -16,8 +15,6 @@ if (!GOOGLE_API_KEY) {
 }
 
 /**
- * @route GET /api/places/nearby
- * @desc Search for nearby places (specifically 'bar')
  * @query lat (number), lng (number), radius (number, in meters, e.g., 5000)
  */
 export const findNearbyPlaces = asyncHandler(
@@ -49,12 +46,12 @@ export const findNearbyPlaces = asyncHandler(
           key: GOOGLE_API_KEY,
           location,
           radius: Number(radius),
-          type: PlaceType1.bar, // <-- Specifically searching for bars
+          type: PlaceType1.bar, // for bars
         },
-        timeout: 1000, // Optional: timeout in milliseconds
+        timeout: 1000, 
       });
 
-      // Send the list of places back to the frontend
+      //list of places
       res.json(ok(response.data.results));
     } catch (error: any) {
       console.error("Google Places API error:", error.response?.data?.error_message || error.message);
