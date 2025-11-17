@@ -2,9 +2,7 @@ import { Server, Socket } from "socket.io";
 import { Server as HttpServer } from "http";
 import jwt from "jsonwebtoken";
 // --- 1. IMPORT MODELS NEEDED FOR CHAT ---
-import { Message } from "./models/Message";
-import { Chat } from "./models/Chat";
-//import { Message, Chat } from "../models";
+import { Message, Chat } from "./models";
 
 // ---
 // These maps help us track who is who and where they are
@@ -58,7 +56,6 @@ export const initSocket = (httpServer: HttpServer) => {
     userSockets.set(userId, socket.id);
 
     // --- CHAT LOGIC ---
-    // This is the "keyword" to join a room
     socket.on("chat:join", (chatId: string) => {
       // Leave any old chat room first
       const oldRoom = socketChatRooms.get(socket.id);
@@ -71,14 +68,13 @@ export const initSocket = (httpServer: HttpServer) => {
       console.log(`User ${userId} joined chat room: ${chatId}`);
     });
 
-    // This is the "keyword" to leave a room
     socket.on("chat:leave", (chatId: string) => {
       socket.leave(chatId);
       socketChatRooms.delete(socket.id);
       console.log(`User ${userId} left chat room: ${chatId}`);
     });
 
-    // This is the "keyword" to send a message
+    // --- THIS LISTENER IS NOW UPDATED ---
     socket.on(
       "message:send",
       async (payload: {
@@ -88,6 +84,7 @@ export const initSocket = (httpServer: HttpServer) => {
       }) => {
         if (!payload.chatId) return; // Ignore if no chatId
 
+        // 1. Create the message
         const msg = await Message.create({
           chatId: payload.chatId,
           senderId: userId,
@@ -95,13 +92,21 @@ export const initSocket = (httpServer: HttpServer) => {
           attachments: payload.attachments || [],
         });
 
-        // Also update the chat's last message time
+        // --- 2. ADD POPULATE STEP ---
+        // We do this so the receiver gets the user's info
+        const populatedMsg = await msg.populate(
+          "senderId",
+          "name profilePhoto"
+        );
+        // --- END OF UPDATE ---
+
+        // 3. Update the chat's last message time
         await Chat.findByIdAndUpdate(payload.chatId, {
           lastMessageAt: new Date(),
         });
 
-        // This emits the "keyword" to receive
-        io.to(payload.chatId).emit("chat:message:new", msg.toJSON());
+        // 4. This emits the "keyword" to receive with the POPULATED message
+        io.to(payload.chatId).emit("chat:message:new", populatedMsg.toJSON());
       }
     );
     // --- END OF CHAT LOGIC ---
@@ -128,9 +133,8 @@ export const initSocket = (httpServer: HttpServer) => {
     });
   });
 
-  // --- Helper Functions ---
+  // --- Helper Functions (All helpers in one place) ---
   const notifyUser = (userId: string, data: any) => {
-    // FIX: Renamed variable and added guard clause
     const socketIdToNotify = userSockets.get(userId);
     if (!socketIdToNotify) {
       return; // User is not connected
@@ -144,7 +148,6 @@ export const initSocket = (httpServer: HttpServer) => {
   };
 
   const joinRideRoom = (userId: string, rideId: string) => {
-    // FIX: Renamed variable and added guard clause
     const socketIdToJoin = userSockets.get(userId);
     if (!socketIdToJoin) {
       return; // User is not connected
@@ -158,7 +161,6 @@ export const initSocket = (httpServer: HttpServer) => {
   };
 
   const leaveRideRoom = (userId: string) => {
-    // FIX: Renamed variable and added guard clause
     const socketIdToLeave = userSockets.get(userId);
     if (!socketIdToLeave) {
       return; // User is not connected

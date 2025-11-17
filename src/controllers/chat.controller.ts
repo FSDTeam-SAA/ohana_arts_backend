@@ -82,19 +82,15 @@ export const ensureOneOnOneChat = asyncHandler(
     }
 
     // --- 1. SORT THE MEMBERS ARRAY ---
-    // This ensures [userA, userB] is the same as [userB, userA]
     const members = [currentUserId, otherUserId].sort();
 
     const chat = await Chat.findOneAndUpdate(
       // --- 2. THE QUERY IS NOW SIMPLE ---
-      // Find the doc that matches this exact eventId and sorted members list
       {
         eventId: eventId,
         members: members,
       },
       // --- 3. $setOnInsert IS SIMPLIFIED ---
-      // The query fields (eventId, members) are added automatically on insert.
-      // We only need to add fields that are *not* in the query.
       {
         $setOnInsert: {
           lastMessageAt: new Date(),
@@ -115,19 +111,23 @@ export const ensureOneOnOneChat = asyncHandler(
  * @route GET /api/chats/:chatId/messages
  * @desc Loads the history for a specific chat room
  */
+// --- THIS FUNCTION IS UPDATED ---
 export const listMessages = asyncHandler(
   async (req: Request, res: Response) => {
     const msgs = await Message.find({ chatId: req.params.chatId })
+      .populate("senderId", "name profilePhoto") // <-- 1. ADD THIS POPULATE
       .sort({ createdAt: -1 })
       .limit(100);
     res.json(ok(msgs.reverse()));
   }
 );
+// --- END OF UPDATE ---
 
 /**
  * @route POST /api/chats/:chatId/messages
  * @desc Sends a message to a specific chat room
  */
+// --- THIS FUNCTION IS UPDATED ---
 export const sendMessage =
   (ioHelpers: SocketHelpers) => async (req: any, res: any) => {
     const { text } = req.body;
@@ -143,6 +143,7 @@ export const sendMessage =
       }
     }
 
+    // 1. Create the message
     const msg = await Message.create({
       chatId: chatId,
       senderId: req.user.id,
@@ -151,12 +152,17 @@ export const sendMessage =
       attachmentsPublicIds: attachmentPids,
     });
 
+    // --- 2. THIS IS THE NEW STEP ---
+    // Populate the sender's info (name and photo)
+    const populatedMsg = await msg.populate("senderId", "name profilePhoto");
+    // --- END OF NEW STEP ---
+
     const chat = await Chat.findByIdAndUpdate(chatId, {
       lastMessageAt: new Date(),
     });
 
-    // Broadcast the message to the (private 1-on-1) room
-    ioHelpers.broadcastMessage(chatId, msg.toJSON());
+    // 3. Broadcast the POPULATED message
+    ioHelpers.broadcastMessage(chatId, populatedMsg.toJSON()); // <-- Use populatedMsg
 
     if (chat && socketHelpers) {
       const otherUser = chat.members.find(
@@ -172,5 +178,7 @@ export const sendMessage =
       }
     }
 
-    res.json(created(msg));
+    // 4. Respond with the POPULATED message
+    res.status(StatusCodes.CREATED).json(created(populatedMsg.toJSON())); // <-- Use populatedMsg and send 201
   };
+// --- END OF UPDATE ---

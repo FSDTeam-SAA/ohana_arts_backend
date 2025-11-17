@@ -30,7 +30,15 @@ const POINT_RULES = {
 const BADGE_THRESOLDS = {
   [Badge.Bronze]: 0,
   [Badge.Silver]: 100,
-  [Badge.Gold]: 500,
+  [Badge.Gold]: 200,
+  [Badge.Emerald]: 300,
+  [Badge.Sapphire]: 400,
+  [Badge.Roby]: 500,
+  [Badge.Amethyst]: 600,
+  [Badge.Diamond]: 700,
+  [Badge.PinkDiamond]: 800,
+  [Badge.GalaxyOpal]: 900,
+  [Badge.DarkMatter]: 500,
 };
 
 function getBadgeFromPoints(points: number): Badge {
