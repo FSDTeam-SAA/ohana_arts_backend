@@ -4,7 +4,7 @@ export enum Badge {
   Gold = "Gold",
   Emerald = "Emerald",
   Sapphire = "Sapphire",
-  Roby = "Ruby",
+  Ruby = "Ruby",
   Amethyst = "Amethyst",
   Diamond = "Diamond",
   PinkDiamond = "Pink Diamond",

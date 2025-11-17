@@ -8,11 +8,9 @@ import notificationRoutes from "./notification.routes";
 import rewardRoutes from "./reward.routes";
 import taskRoutes from "./task.routes";
 import chatRoutesFactory from "./chat.routes";
-// --- THIS IS THE FIX ---
-// We import the one, true SocketHelpers type from our socket.ts file
+import placesRoutes from "./places.routes";
 import type { SocketHelpers } from "../socket";
 
-// This parameter 'ioHelpers: SocketHelpers' will now use the new, correct type
 export default (ioHelpers: SocketHelpers) => {
   const router = Router();
   router.use("/auth", authRoutes);
@@ -24,5 +22,7 @@ export default (ioHelpers: SocketHelpers) => {
   router.use("/rewards", rewardRoutes);
   router.use("/tasks", taskRoutes);
   router.use("/chats", chatRoutesFactory(ioHelpers));
+  router.use("/places", placesRoutes);
+
   return router;
 };
