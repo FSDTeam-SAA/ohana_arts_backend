@@ -14,10 +14,10 @@ import {
   Ride,
   Task,
   IEventAttendee,
-  User, // <-- 1. IMPORT USER
-  Notification, // <-- 2. IMPORT NOTIFICATION
+  User,
+  Notification,
 } from "../models";
-import { RSVPStatus, NotificationType } from "../types/enums"; // <-- 3. IMPORT NOTIFICATION TYPE
+import { RSVPStatus, NotificationType } from "../types/enums";
 import { uploadBufferToCloudinary } from "../utils/cloudinaryUpload";
 import { nanoid } from "nanoid";
 import mongoose from "mongoose";
@@ -27,6 +27,19 @@ import { awardPoints } from "./reward.controller";
 
 const parseNumber = (x?: string) => (x === undefined ? undefined : Number(x));
 
+// Helper to safely parse JSON strings (needed when using multer)
+const safeParseJSON = (input: any) => {
+  if (typeof input === "string") {
+    try {
+      return JSON.parse(input);
+    } catch (e) {
+      return [];
+    }
+  }
+  return input;
+};
+
+// --- UPDATED CREATE EVENT FUNCTION ---
 export const createEvent = asyncHandler(async (req: any, res: Response) => {
   const {
     title,
@@ -38,7 +51,10 @@ export const createEvent = asyncHandler(async (req: any, res: Response) => {
     dateTime,
     capacity,
     fee,
+    invitedUserIds, // <-- Array of user IDs
+    barHopStops,    // <-- Array of stop objects
   } = req.body;
+
   if (!title || !dateTime)
     throw new ApiError(StatusCodes.BAD_REQUEST, "title & dateTime required");
 
@@ -52,42 +68,140 @@ export const createEvent = asyncHandler(async (req: any, res: Response) => {
     );
   }
 
-  const event: any = {
-    title,
-    description,
-    location: { name: locationName, address },
-    dateTime: eventDate.toDate(),
-    capacity: parseNumber(capacity),
-    fee: parseNumber(fee),
-    createdBy: req.user.id,
-    inviteCode: nanoid(8),
-    attendees: [{ userId: req.user.id, status: RSVPStatus.Yes }],
-  };
+  // 1. Start a Transaction
+  const session = await mongoose.startSession();
+  session.startTransaction();
 
-  if (lat && lng)
-    event.location.point = {
-      type: "Point",
-      coordinates: [Number(lng), Number(lat)],
+  try {
+    // 2. Prepare Attendees List
+    // Add creator as 'Yes'
+    const allAttendees: any[] = [
+      { userId: req.user.id, status: RSVPStatus.Yes, updatedAt: new Date() },
+    ];
+
+    // Parse and Add invited users as 'Pending'
+    const inviteList = safeParseJSON(invitedUserIds);
+    if (Array.isArray(inviteList) && inviteList.length > 0) {
+      inviteList.forEach((uid: string) => {
+        // Avoid duplicates if creator invited themselves
+        if (uid !== req.user.id) {
+          allAttendees.push({
+            userId: uid,
+            status: RSVPStatus.Pending,
+            invitedBy: req.user.id,
+            invitedAt: new Date(),
+            updatedAt: new Date(),
+          });
+        }
+      });
+    }
+
+    // 3. Create Event Object
+    const event: any = {
+      title,
+      description,
+      location: { name: locationName, address },
+      dateTime: eventDate.toDate(),
+      capacity: parseNumber(capacity),
+      fee: parseNumber(fee),
+      createdBy: req.user.id,
+      inviteCode: nanoid(8),
+      attendees: allAttendees,
     };
 
-  if (req.file) {
-    const img = await uploadBufferToCloudinary(req.file.buffer, "rally/events");
-    event.image = img.url;
-    event.imagePublicId = img.public_id;
+    if (lat && lng) {
+      event.location.point = {
+        type: "Point",
+        coordinates: [Number(lng), Number(lat)],
+      };
+    }
+
+    // Handle Image Upload
+    if (req.file) {
+      const img = await uploadBufferToCloudinary(req.file.buffer, "rally/events");
+      event.image = img.url;
+      event.imagePublicId = img.public_id;
+    }
+
+    // Save Event (inside session)
+    const savedEvent = await Event.create([event], { session });
+    const eventId = savedEvent[0]._id;
+
+    // 4. Handle Bar Hop Stops (if any)
+    const stopsList = safeParseJSON(barHopStops);
+    let savedStops = [];
+    
+    if (Array.isArray(stopsList) && stopsList.length > 0) {
+      const stopsToInsert = stopsList.map((stop: any) => ({
+        eventId: eventId,
+        order: Number(stop.order),
+        name: stop.name,
+        image: stop.image, // <-- Handles the image URL from Google Places
+        scheduledAt: stop.time ? new Date(stop.time) : undefined,
+        fee: stop.fee ? Number(stop.fee) : undefined,
+        description: stop.description,
+        location: {
+          address: stop.address,
+          point: { 
+            type: "Point", 
+            coordinates: [Number(stop.lng), Number(stop.lat)] 
+          },
+        },
+      }));
+
+      savedStops = await BarHopStop.insertMany(stopsToInsert, { session });
+    }
+
+    // 5. Send Notifications to Invited Users
+    if (inviteList.length > 0) {
+      const host = await User.findById(req.user.id).select("name");
+      const hostName = host ? host.name : "A host";
+
+      // Filter out creator just in case
+      const validInvites = inviteList.filter((uid: string) => uid !== req.user.id);
+      
+      const notifications = validInvites.map((uid: string) => ({
+        userId: uid,
+        type: NotificationType.Invite,
+        title: "You're invited!",
+        body: `${hostName} invited you to the event: ${title}`,
+        data: { eventId: eventId },
+      }));
+
+      if (notifications.length > 0) {
+        await Notification.insertMany(notifications, { session });
+      }
+    }
+
+    // 6. Create Host CheckIn
+    await CheckIn.create([{
+      eventId: eventId,
+      userId: req.user.id,
+      status: "StillOut",
+    }], { session });
+
+    // 7. Commit Transaction
+    await session.commitTransaction();
+    session.endSession();
+
+    // 8. Award Points (Outside transaction is fine, or keep inside if preferred)
+    // We await this separately to avoid blocking the response if it takes time
+    awardPoints(savedEvent[0].createdBy, "CREATE_RALLY", savedEvent[0]._id).catch(console.error);
+
+    res.status(StatusCodes.CREATED).json(created({ 
+      event: savedEvent[0], 
+      stops: savedStops 
+    }));
+
+  } catch (error) {
+    // If anything fails, rollback everything
+    await session.abortTransaction();
+    session.endSession();
+    throw error;
   }
-
-  const saved = await Event.create(event);
-
-  await CheckIn.create({
-    eventId: saved._id,
-    userId: req.user.id,
-    status: "StillOut",
-  });
-
-  await awardPoints(saved.createdBy, "CREATE_RALLY", saved._id);
-
-  res.status(StatusCodes.CREATED).json(created(saved));
 });
+
+// --- EXISTING FUNCTIONS (UNCHANGED) ---
 
 export const listEvents = asyncHandler(async (req: any, res: Response) => {
   const scope = (req.query.scope as string) || "upcoming";
@@ -283,20 +397,21 @@ export const inviteUser = asyncHandler(async (req: any, res: Response) => {
       updatedAt: new Date(),
     } as any);
     await event.save();
-  } // --- 4. START NEW NOTIFICATION LOGIC ---
+  }
 
   const host = await User.findById(req.user.id).select("name");
   const hostName = host ? host.name : "A host";
 
   await Notification.create({
-    userId: userId, // The person being invited
+    userId: userId,
     type: NotificationType.Invite,
     title: "You're invited!",
     body: `${hostName} invited you to the event: ${event.title}`,
     data: {
       eventId: event._id,
     },
-  }); // --- END NEW NOTIFICATION LOGIC ---
+  });
+
   res.status(StatusCodes.CREATED).json(
     created({
       eventId,
@@ -329,14 +444,14 @@ export const respondInvite = asyncHandler(async (req: any, res: Response) => {
 
   me.status = action === "Accept" ? RSVPStatus.Yes : RSVPStatus.No;
   me.updatedAt = new Date();
-  await event.save(); // --- 5. START NEW NOTIFICATION LOGIC --- // Notify the event host (creator) about the response
+  await event.save();
 
   if (event.createdBy.toString() !== req.user.id) {
     const user = await User.findById(req.user.id).select("name");
     const userName = user ? user.name : "Someone";
 
     await Notification.create({
-      userId: event.createdBy, // The event host
+      userId: event.createdBy,
       type: NotificationType.RSVP,
       title: "RSVP Update",
       body: `${userName} has responded ${me.status} to your event: ${event.title}`,
@@ -345,7 +460,8 @@ export const respondInvite = asyncHandler(async (req: any, res: Response) => {
         userId: req.user.id,
       },
     });
-  } // --- END NEW NOTIFICATION LOGIC ---
+  }
+
   if (me.status === RSVPStatus.Yes) {
     await awardPoints(req.user.id, "JOIN_RALLY", event._id);
   }
@@ -356,7 +472,6 @@ export const respondInvite = asyncHandler(async (req: any, res: Response) => {
 export const createStop = asyncHandler(async (req: any, res: Response) => {
   const eventId = req.params.id;
   const { name, order, time, fee, description, lat, lng, address, image } = req.body;
-
   if (!name || !order || !lat || !lng)
     throw new ApiError(StatusCodes.BAD_REQUEST, "Missing stop fields");
 
@@ -364,7 +479,7 @@ export const createStop = asyncHandler(async (req: any, res: Response) => {
     eventId,
     order: Number(order),
     name,
-    image: image, 
+    image: image,
     scheduledAt: time ? new Date(time) : undefined,
     fee: fee ? Number(fee) : undefined,
     description,
@@ -384,7 +499,14 @@ export const listStops = asyncHandler(async (req: Request, res: Response) => {
 });
 
 export const quickRally = asyncHandler(async (req: any, res: Response) => {
-  const { title, locationName, lat, lng, address, invitedUserIds } = req.body;
+  const {
+    title,
+    locationName,
+    lat,
+    lng,
+    address,
+    invitedUserIds, 
+  } = req.body;
 
   if (!title) {
     throw new ApiError(
@@ -427,7 +549,7 @@ export const quickRally = asyncHandler(async (req: any, res: Response) => {
           ? { type: "Point", coordinates: [Number(lng), Number(lat)] }
           : undefined,
     },
-  }); // --- 6. START NEW NOTIFICATION LOGIC (for QuickRally) ---
+  });
 
   if (Array.isArray(invitedUserIds) && invitedUserIds.length > 0) {
     const host = await User.findById(req.user.id).select("name");
@@ -444,7 +566,8 @@ export const quickRally = asyncHandler(async (req: any, res: Response) => {
       },
     }));
     await Notification.insertMany(notifications);
-  } // --- END NEW NOTIFICATION LOGIC ---
+  }
+
   const qr = await QuickRally.create({
     eventId: event._id,
     hostId: req.user.id,
