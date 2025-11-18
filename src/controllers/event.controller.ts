@@ -51,8 +51,8 @@ export const createEvent = asyncHandler(async (req: any, res: Response) => {
     dateTime,
     capacity,
     fee,
-    invitedUserIds, // <-- Array of user IDs
-    barHopStops,    // <-- Array of stop objects
+    invitedUserIds,
+    barHopStops,
   } = req.body;
 
   if (!title || !dateTime)
@@ -118,7 +118,10 @@ export const createEvent = asyncHandler(async (req: any, res: Response) => {
 
     // Handle Image Upload
     if (req.file) {
-      const img = await uploadBufferToCloudinary(req.file.buffer, "rally/events");
+      const img = await uploadBufferToCloudinary(
+        req.file.buffer,
+        "rally/events"
+      );
       event.image = img.url;
       event.imagePublicId = img.public_id;
     }
@@ -130,7 +133,7 @@ export const createEvent = asyncHandler(async (req: any, res: Response) => {
     // 4. Handle Bar Hop Stops (if any)
     const stopsList = safeParseJSON(barHopStops);
     let savedStops = [];
-    
+
     if (Array.isArray(stopsList) && stopsList.length > 0) {
       const stopsToInsert = stopsList.map((stop: any) => ({
         eventId: eventId,
@@ -142,9 +145,9 @@ export const createEvent = asyncHandler(async (req: any, res: Response) => {
         description: stop.description,
         location: {
           address: stop.address,
-          point: { 
-            type: "Point", 
-            coordinates: [Number(stop.lng), Number(stop.lat)] 
+          point: {
+            type: "Point",
+            coordinates: [Number(stop.lng), Number(stop.lat)],
           },
         },
       }));
@@ -158,8 +161,10 @@ export const createEvent = asyncHandler(async (req: any, res: Response) => {
       const hostName = host ? host.name : "A host";
 
       // Filter out creator just in case
-      const validInvites = inviteList.filter((uid: string) => uid !== req.user.id);
-      
+      const validInvites = inviteList.filter(
+        (uid: string) => uid !== req.user.id
+      );
+
       const notifications = validInvites.map((uid: string) => ({
         userId: uid,
         type: NotificationType.Invite,
@@ -174,11 +179,16 @@ export const createEvent = asyncHandler(async (req: any, res: Response) => {
     }
 
     // 6. Create Host CheckIn
-    await CheckIn.create([{
-      eventId: eventId,
-      userId: req.user.id,
-      status: "StillOut",
-    }], { session });
+    await CheckIn.create(
+      [
+        {
+          eventId: eventId,
+          userId: req.user.id,
+          status: "StillOut",
+        },
+      ],
+      { session }
+    );
 
     // 7. Commit Transaction
     await session.commitTransaction();
@@ -186,13 +196,18 @@ export const createEvent = asyncHandler(async (req: any, res: Response) => {
 
     // 8. Award Points (Outside transaction is fine, or keep inside if preferred)
     // We await this separately to avoid blocking the response if it takes time
-    awardPoints(savedEvent[0].createdBy, "CREATE_RALLY", savedEvent[0]._id).catch(console.error);
+    awardPoints(
+      savedEvent[0].createdBy,
+      "CREATE_RALLY",
+      savedEvent[0]._id
+    ).catch(console.error);
 
-    res.status(StatusCodes.CREATED).json(created({ 
-      event: savedEvent[0], 
-      stops: savedStops 
-    }));
-
+    res.status(StatusCodes.CREATED).json(
+      created({
+        event: savedEvent[0],
+        stops: savedStops,
+      })
+    );
   } catch (error) {
     // If anything fails, rollback everything
     await session.abortTransaction();
@@ -471,7 +486,8 @@ export const respondInvite = asyncHandler(async (req: any, res: Response) => {
 
 export const createStop = asyncHandler(async (req: any, res: Response) => {
   const eventId = req.params.id;
-  const { name, order, time, fee, description, lat, lng, address, image } = req.body;
+  const { name, order, time, fee, description, lat, lng, address, image } =
+    req.body;
   if (!name || !order || !lat || !lng)
     throw new ApiError(StatusCodes.BAD_REQUEST, "Missing stop fields");
 
@@ -499,14 +515,7 @@ export const listStops = asyncHandler(async (req: Request, res: Response) => {
 });
 
 export const quickRally = asyncHandler(async (req: any, res: Response) => {
-  const {
-    title,
-    locationName,
-    lat,
-    lng,
-    address,
-    invitedUserIds, 
-  } = req.body;
+  const { title, locationName, lat, lng, address, invitedUserIds } = req.body;
 
   if (!title) {
     throw new ApiError(
