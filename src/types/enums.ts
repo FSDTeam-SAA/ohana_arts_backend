@@ -4,12 +4,12 @@ export enum Badge {
   Gold = "Gold",
   Emerald = "Emerald",
   Sapphire = "Sapphire",
-  Ruby = "Ruby",
+  Ruby = "Ruby", // <-- This was 'Roby' in your original, I've kept it as Ruby from our last fix
   Amethyst = "Amethyst",
   Diamond = "Diamond",
   PinkDiamond = "Pink Diamond",
   GalaxyOpal = "Galaxy Opal",
-  DarkMatter = "Dark Matter"
+  DarkMatter = "Dark Matter",
 }
 
 export enum RSVPStatus {
@@ -56,5 +56,7 @@ export enum NotificationType {
   Payment = "Payment",
   RideUpdate = "RideUpdate",
   CheckIn = "CheckIn",
-  Points = "points"
+  Points = "points",
+  Task = "Task", // <-- 1. ADD THIS NEW TYPE
+  EventStarting = "EventStarting", // <-- 2. ADD THIS FOR THE SCHEDULER
 }

@@ -14,8 +14,10 @@ import {
   Ride,
   Task,
   IEventAttendee,
+  User, // <-- 1. IMPORT USER
+  Notification, // <-- 2. IMPORT NOTIFICATION
 } from "../models";
-import { RSVPStatus } from "../types/enums";
+import { RSVPStatus, NotificationType } from "../types/enums"; // <-- 3. IMPORT NOTIFICATION TYPE
 import { uploadBufferToCloudinary } from "../utils/cloudinaryUpload";
 import { nanoid } from "nanoid";
 import mongoose from "mongoose";
@@ -281,8 +283,20 @@ export const inviteUser = asyncHandler(async (req: any, res: Response) => {
       updatedAt: new Date(),
     } as any);
     await event.save();
-  }
+  } // --- 4. START NEW NOTIFICATION LOGIC ---
 
+  const host = await User.findById(req.user.id).select("name");
+  const hostName = host ? host.name : "A host";
+
+  await Notification.create({
+    userId: userId, // The person being invited
+    type: NotificationType.Invite,
+    title: "You're invited!",
+    body: `${hostName} invited you to the event: ${event.title}`,
+    data: {
+      eventId: event._id,
+    },
+  }); // --- END NEW NOTIFICATION LOGIC ---
   res.status(StatusCodes.CREATED).json(
     created({
       eventId,
@@ -315,8 +329,23 @@ export const respondInvite = asyncHandler(async (req: any, res: Response) => {
 
   me.status = action === "Accept" ? RSVPStatus.Yes : RSVPStatus.No;
   me.updatedAt = new Date();
-  await event.save();
+  await event.save(); // --- 5. START NEW NOTIFICATION LOGIC --- // Notify the event host (creator) about the response
 
+  if (event.createdBy.toString() !== req.user.id) {
+    const user = await User.findById(req.user.id).select("name");
+    const userName = user ? user.name : "Someone";
+
+    await Notification.create({
+      userId: event.createdBy, // The event host
+      type: NotificationType.RSVP,
+      title: "RSVP Update",
+      body: `${userName} has responded ${me.status} to your event: ${event.title}`,
+      data: {
+        eventId: event._id,
+        userId: req.user.id,
+      },
+    });
+  } // --- END NEW NOTIFICATION LOGIC ---
   if (me.status === RSVPStatus.Yes) {
     await awardPoints(req.user.id, "JOIN_RALLY", event._id);
   }
@@ -326,7 +355,8 @@ export const respondInvite = asyncHandler(async (req: any, res: Response) => {
 
 export const createStop = asyncHandler(async (req: any, res: Response) => {
   const eventId = req.params.id;
-  const { name, order, time, fee, description, lat, lng, address } = req.body;
+  const { name, order, time, fee, description, lat, lng, address, image } = req.body;
+
   if (!name || !order || !lat || !lng)
     throw new ApiError(StatusCodes.BAD_REQUEST, "Missing stop fields");
 
@@ -334,6 +364,7 @@ export const createStop = asyncHandler(async (req: any, res: Response) => {
     eventId,
     order: Number(order),
     name,
+    image: image, 
     scheduledAt: time ? new Date(time) : undefined,
     fee: fee ? Number(fee) : undefined,
     description,
@@ -352,16 +383,8 @@ export const listStops = asyncHandler(async (req: Request, res: Response) => {
   res.json(ok(stops));
 });
 
-// --- THIS FUNCTION IS NOW UPDATED ---
 export const quickRally = asyncHandler(async (req: any, res: Response) => {
-  const {
-    title,
-    locationName,
-    lat,
-    lng,
-    address,
-    invitedUserIds, // <-- 1. Get invited user IDs
-  } = req.body;
+  const { title, locationName, lat, lng, address, invitedUserIds } = req.body;
 
   if (!title) {
     throw new ApiError(
@@ -370,7 +393,6 @@ export const quickRally = asyncHandler(async (req: any, res: Response) => {
     );
   }
 
-  // 2. Build the attendees list
   const creatorAttendee = {
     userId: req.user.id,
     status: RSVPStatus.Yes,
@@ -389,14 +411,13 @@ export const quickRally = asyncHandler(async (req: any, res: Response) => {
   }
 
   const allAttendees = [creatorAttendee, ...invitedAttendees];
-  // --- End of new attendee logic ---
 
   const event = await Event.create({
-    title: title, // <-- 3. Use the title from req.body
-    description: "Spontaneous Hangout", // <-- Updated description
-    dateTime: new Date(), // This is correct, makes it a "Live" event
+    title: title,
+    description: "Spontaneous Hangout",
+    dateTime: new Date(),
     createdBy: req.user.id,
-    attendees: allAttendees, // <-- 4. Use the new allAttendees list
+    attendees: allAttendees,
     inviteCode: nanoid(8),
     location: {
       name: locationName,
@@ -406,26 +427,32 @@ export const quickRally = asyncHandler(async (req: any, res: Response) => {
           ? { type: "Point", coordinates: [Number(lng), Number(lat)] }
           : undefined,
     },
-  });
+  }); // --- 6. START NEW NOTIFICATION LOGIC (for QuickRally) ---
 
-  // 5. This chat logic is no longer needed, we removed it
-  // const chat = await Chat.create({
-  //   eventId: event._id,
-  //   members: [req.user.id],
-  // });
-  // event.chatId = chat._id;
-  // await event.save();
-  // --- END OF REMOVAL ---
+  if (Array.isArray(invitedUserIds) && invitedUserIds.length > 0) {
+    const host = await User.findById(req.user.id).select("name");
+    const hostName = host ? host.name : "A host";
+    const body = `${hostName} invited you to a Quick Rally: ${event.title}`;
 
+    const notifications = invitedUserIds.map((userId: string) => ({
+      userId: userId,
+      type: NotificationType.Invite,
+      title: "Quick Rally Invite!",
+      body: body,
+      data: {
+        eventId: event._id,
+      },
+    }));
+    await Notification.insertMany(notifications);
+  } // --- END NEW NOTIFICATION LOGIC ---
   const qr = await QuickRally.create({
     eventId: event._id,
     hostId: req.user.id,
     location: event.location,
-    invitedUsers: invitedUserIds || [], // <-- 6. Save the invited users
+    invitedUsers: invitedUserIds || [],
   });
   res.status(StatusCodes.CREATED).json(created({ event, quickRally: qr }));
 });
-// --- END OF UPDATE ---
 
 export const deleteEvent = asyncHandler(async (req: any, res: Response) => {
   const event = await Event.findOne({
@@ -437,7 +464,6 @@ export const deleteEvent = asyncHandler(async (req: any, res: Response) => {
 
   const session = await mongoose.startSession();
   await session.withTransaction(async () => {
-    // This logic is now correct, it finds all chats for the event
     const chats = await Chat.find({ eventId: event._id }).session(session);
     for (const chat of chats) {
       const msgs = await Message.find({ chatId: chat._id }).session(session);

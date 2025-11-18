@@ -8,15 +8,16 @@ import { Client, PlaceType1 } from "@googlemaps/google-maps-services-js";
 const gmapsClient = new Client({});
 const GOOGLE_API_KEY = process.env.GOOGLE_MAPS_API_KEY!;
 
+// A default placeholder image if the bar has no photo on Google
+const DEFAULT_BAR_IMAGE =
+  "https://images.unsplash.com/photo-1514933651103-005eec06c04b?q=80&w=1974&auto=format&fit=crop";
+
 if (!GOOGLE_API_KEY) {
   console.warn(
     "!! WARNING: GOOGLE_MAPS_API_KEY is not set in .env file. Nearby search will fail. !!"
   );
 }
 
-/**
- * @query lat (number), lng (number), radius (number, in meters, e.g., 5000)
- */
 export const findNearbyPlaces = asyncHandler(
   async (req: Request, res: Response) => {
     const { lat, lng, radius } = req.query;
@@ -46,15 +47,35 @@ export const findNearbyPlaces = asyncHandler(
           key: GOOGLE_API_KEY,
           location,
           radius: Number(radius),
-          type: PlaceType1.bar, // for bars
+          type: PlaceType1.bar,
         },
-        timeout: 1000, 
+        timeout: 2000,
       });
 
-      //list of places
-      res.json(ok(response.data.results));
+      // --- NEW LOGIC TO PROCESS IMAGES ---
+      const resultsWithImages = response.data.results.map((place: any) => {
+        let imageUrl = DEFAULT_BAR_IMAGE;
+
+        // If Google has photos, we construct the URL
+        if (place.photos && place.photos.length > 0) {
+          const photoRef = place.photos[0].photo_reference;
+          // This URL endpoint serves the actual image
+          imageUrl = `https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photo_reference=${photoRef}&key=${GOOGLE_API_KEY}`;
+        }
+
+        return {
+          ...place,
+          // We add a clean 'image' field for your frontend to use
+          image: imageUrl,
+        };
+      });
+
+      res.json(ok(resultsWithImages));
     } catch (error: any) {
-      console.error("Google Places API error:", error.response?.data?.error_message || error.message);
+      console.error(
+        "Google Places API error:",
+        error.response?.data?.error_message || error.message
+      );
       throw new ApiError(
         StatusCodes.INTERNAL_SERVER_ERROR,
         "Failed to fetch data from Google Places",

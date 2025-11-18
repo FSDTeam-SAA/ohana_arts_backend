@@ -37,14 +37,12 @@ export interface IEvent extends Document {
   inviteCode?: string;
 
   createdBy: ObjectId;
-  attendees: IEventAttendee[];
+  attendees: IEventAttendee[]; // --- NEW FIELD ---
 
-  // chatId?: ObjectId; // <-- REMOVED THIS FIELD
-
+  isStartNotified?: boolean; // To track if "event starting" notification was sent // --- END NEW FIELD ---
   createdAt: Date;
-  updatedAt: Date;
+  updatedAt: Date; //virtual property
 
-  //virtual property
   attendeeDisplay?: {
     firstThree: {
       name: string;
@@ -93,9 +91,8 @@ const EventSchema = new Schema<IEvent>(
         invitedAt: { type: Date },
         updatedAt: { type: Date, default: Date.now },
       },
-    ],
-
-    // chatId: { type: Schema.Types.ObjectId, ref: "Chat" }, // <-- REMOVED THIS FIELD
+    ], // --- NEW FIELD ---
+    isStartNotified: { type: Boolean, default: false }, // --- END NEW FIELD ---
   },
   { timestamps: true }
 );
@@ -104,6 +101,10 @@ const EventSchema = new Schema<IEvent>(
 EventSchema.index({ _id: 1, "attendees.userId": 1 }, { unique: false });
 EventSchema.index({ createdBy: 1, dateTime: -1 });
 EventSchema.index({ inviteCode: 1 }, { sparse: true });
+
+// --- NEW INDEX for the scheduler ---
+EventSchema.index({ dateTime: 1, isStartNotified: 1 });
+// --- END NEW INDEX ---
 
 EventSchema.virtual("attendeeDisplay").get(function (this: IEvent) {
   if (!this.attendees) {
@@ -123,7 +124,7 @@ EventSchema.virtual("attendeeDisplay").get(function (this: IEvent) {
       name: user.name,
       profilePhoto: user.profilePhoto,
       initial: user.name.charAt(0).toUpperCase(),
-    };
+    }; 
   });
 
   const remainingCount = totalAttending > 3 ? totalAttending - 3 : 0;
@@ -134,7 +135,6 @@ EventSchema.virtual("attendeeDisplay").get(function (this: IEvent) {
     remainingCount,
   };
 });
-// --- END OF NEW VIRTUAL PROPERTY ---
 
 toJSON(EventSchema);
 
