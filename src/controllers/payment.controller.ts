@@ -1,19 +1,27 @@
 import { Request, Response } from "express";
 import { asyncHandler } from "../utils/asyncHandler";
 import { created, ok } from "../utils/ApiResponse";
-import { Payment } from "../models";
 import { PaymentMethod, PaymentStatus } from "../types/enums";
 import { uploadBufferToCloudinary } from "../utils/cloudinaryUpload";
 import { stripe } from "../config/stripe";
 import { getPayPalClient } from "../config/paypal";
 import paypal from "@paypal/checkout-server-sdk";
 import { StatusCodes } from "http-status-codes";
+import { Payment, Event } from "../models";
+import { ApiError } from "../utils/ApiError";
 
 export const uploadReceipt = asyncHandler(async (req: any, res: Response) => {
-  const { eventId, amount, method } = req.body as { eventId: string; amount: string; method: PaymentMethod };
+  const { eventId, amount, method } = req.body as {
+    eventId: string;
+    amount: string;
+    method: PaymentMethod;
+  };
   let receiptUrl: string | undefined;
   if (req.file) {
-    const up = await uploadBufferToCloudinary(req.file.buffer, "rally/receipts");
+    const up = await uploadBufferToCloudinary(
+      req.file.buffer,
+      "rally/receipts"
+    );
     receiptUrl = up.url;
   }
   const payment = await Payment.create({
@@ -23,50 +31,54 @@ export const uploadReceipt = asyncHandler(async (req: any, res: Response) => {
     method,
     status: PaymentStatus.Paid,
     receiptUrl,
-    paidAt: new Date()
+    paidAt: new Date(),
   });
   res.status(201).json(created(payment));
 });
 
-export const createStripeCheckout = asyncHandler(async (req: any, res: Response) => {
-  const { eventId, amount, successUrl, cancelUrl } = req.body as {
-    eventId: string;
-    amount: number;
-    successUrl: string;
-    cancelUrl: string;
-  };
+export const createStripeCheckout = asyncHandler(
+  async (req: any, res: Response) => {
+    const { eventId, amount, successUrl, cancelUrl } = req.body as {
+      eventId: string;
+      amount: number;
+      successUrl: string;
+      cancelUrl: string;
+    };
 
-  const currency = (process.env.STRIPE_CURRENCY || "usd").toLowerCase();
+    const currency = (process.env.STRIPE_CURRENCY || "usd").toLowerCase();
 
-  const session = await stripe.checkout.sessions.create({
-    mode: "payment",
-    payment_method_types: ["card"],
-    line_items: [
-      {
-        price_data: {
-          currency,
-          product_data: { name: "Event Payment" },
-          unit_amount: Math.round(amount * 100)
+    const session = await stripe.checkout.sessions.create({
+      mode: "payment",
+      payment_method_types: ["card"],
+      line_items: [
+        {
+          price_data: {
+            currency,
+            product_data: { name: "Event Payment" },
+            unit_amount: Math.round(amount * 100),
+          },
+          quantity: 1,
         },
-        quantity: 1
-      }
-    ],
-    success_url: successUrl,
-    cancel_url: cancelUrl,
-    metadata: { eventId, userId: req.user.id }
-  });
+      ],
+      success_url: successUrl,
+      cancel_url: cancelUrl,
+      metadata: { eventId, userId: req.user.id },
+    });
 
-  await Payment.create({
-    eventId,
-    userId: req.user.id,
-    amount,
-    method: PaymentMethod.Stripe,
-    status: PaymentStatus.Pending,
-    stripeSessionId: session.id
-  });
+    await Payment.create({
+      eventId,
+      userId: req.user.id,
+      amount,
+      method: PaymentMethod.Stripe,
+      status: PaymentStatus.Pending,
+      stripeSessionId: session.id,
+    });
 
-  res.status(StatusCodes.CREATED).json(created({ id: session.id, url: session.url }));
-});
+    res
+      .status(StatusCodes.CREATED)
+      .json(created({ id: session.id, url: session.url }));
+  }
+);
 
 export const stripeWebhook = async (req: Request, res: Response) => {
   const sig = req.headers["stripe-signature"] as string;
@@ -93,7 +105,7 @@ export const stripeWebhook = async (req: Request, res: Response) => {
         status: PaymentStatus.Paid,
         amount: amountTotal || undefined,
         stripePaymentIntentId: session.payment_intent,
-        paidAt: new Date()
+        paidAt: new Date(),
       },
       { new: true }
     );
@@ -102,57 +114,109 @@ export const stripeWebhook = async (req: Request, res: Response) => {
   res.json({ received: true });
 };
 
-export const createPaypalOrder = asyncHandler(async (req: any, res: Response) => {
-  const { eventId, amount, currency = "USD" } = req.body as { eventId: string; amount: number; currency?: string };
+export const createPaypalOrder = asyncHandler(
+  async (req: any, res: Response) => {
+    const {
+      eventId,
+      amount,
+      currency = "USD",
+    } = req.body as { eventId: string; amount: number; currency?: string };
 
-  const client = getPayPalClient();
-  const request = new paypal.orders.OrdersCreateRequest();
-  request.prefer("return=representation");
-  request.requestBody({
-    intent: "CAPTURE",
-    purchase_units: [{ amount: { currency_code: currency, value: amount.toFixed(2) } }]
-  });
+    const client = getPayPalClient();
+    const request = new paypal.orders.OrdersCreateRequest();
+    request.prefer("return=representation");
+    request.requestBody({
+      intent: "CAPTURE",
+      purchase_units: [
+        { amount: { currency_code: currency, value: amount.toFixed(2) } },
+      ],
+    });
 
-  const order = await client.execute(request);
+    const order = await client.execute(request);
 
-  await Payment.create({
-    eventId,
-    userId: req.user.id,
-    amount,
-    method: PaymentMethod.PayPal,
-    status: PaymentStatus.Pending,
-    paypalOrderId: order.result.id
-  });
+    await Payment.create({
+      eventId,
+      userId: req.user.id,
+      amount,
+      method: PaymentMethod.PayPal,
+      status: PaymentStatus.Pending,
+      paypalOrderId: order.result.id,
+    });
 
-  res.status(StatusCodes.CREATED).json(created({ id: order.result.id, links: order.result.links }));
-});
+    res
+      .status(StatusCodes.CREATED)
+      .json(created({ id: order.result.id, links: order.result.links }));
+  }
+);
 
-export const capturePaypalOrder = asyncHandler(async (req: any, res: Response) => {
-  const orderId = req.params.orderId;
-  const client = getPayPalClient();
+export const capturePaypalOrder = asyncHandler(
+  async (req: any, res: Response) => {
+    const orderId = req.params.orderId;
+    const client = getPayPalClient();
 
-  const request = new paypal.orders.OrdersCaptureRequest(orderId);
-  request.requestBody({});
-  const capture = await client.execute(request);
+    const request = new paypal.orders.OrdersCaptureRequest(orderId);
+    request.requestBody({});
+    const capture = await client.execute(request);
 
-  const amount = Number(capture.result?.purchase_units?.[0]?.payments?.captures?.[0]?.amount?.value || 0);
+    const amount = Number(
+      capture.result?.purchase_units?.[0]?.payments?.captures?.[0]?.amount
+        ?.value || 0
+    );
 
-  await Payment.findOneAndUpdate(
-    { paypalOrderId: orderId },
-    {
+    await Payment.findOneAndUpdate(
+      { paypalOrderId: orderId },
+      {
+        status: PaymentStatus.Paid,
+        paidAt: new Date(),
+        amount: isNaN(amount) ? undefined : amount,
+        paypalCaptureId:
+          capture.result?.purchase_units?.[0]?.payments?.captures?.[0]?.id,
+      },
+      { new: true }
+    );
+
+    res.json(ok({ id: orderId, capture: capture.result }));
+  }
+);
+
+export const eventPayments = asyncHandler(
+  async (req: Request, res: Response) => {
+    const { eventId } = req.params;
+
+    // 1. Get the Event to see who is attending
+    const event = await Event.findById(eventId).populate(
+      "attendees.userId",
+      "name profilePhoto"
+    );
+    if (!event) throw new ApiError(StatusCodes.NOT_FOUND, "Event not found");
+
+    const payments = await Payment.find({
+      eventId: eventId,
       status: PaymentStatus.Paid,
-      paidAt: new Date(),
-      amount: isNaN(amount) ? undefined : amount,
-      paypalCaptureId: capture.result?.purchase_units?.[0]?.payments?.captures?.[0]?.id
-    },
-    { new: true }
-  );
+    });
 
-  res.json(ok({ id: orderId, capture: capture.result }));
-});
+    const collectedAmount = payments.reduce((sum, p) => sum + p.amount, 0);
 
-export const eventPayments = asyncHandler(async (req: Request, res: Response) => {
-  const list = await Payment.find({ eventId: req.params.eventId }).sort({ createdAt: -1 });
-  const collected = list.reduce((s, p) => s + (p.status === "Paid" ? p.amount : 0), 0);
-  res.json(ok({ list, collected }));
-});
+    const userStatusList = event.attendees.map((attendee: any) => {
+      const hasPaid = payments.some(
+        (p) => p.userId.toString() === attendee.userId._id.toString()
+      );
+
+      return {
+        userId: attendee.userId._id,
+        name: attendee.userId.name,
+        profilePhoto: attendee.userId.profilePhoto,
+        status: hasPaid ? "Paid" : "Waiting", 
+      };
+    });
+
+    res.json(
+      ok({
+        eventName: event.title,
+        totalExpectedAmount: (event.fee || 0) * event.attendees.length,
+        collectedAmount,
+        users: userStatusList,
+      })
+    );
+  }
+);
