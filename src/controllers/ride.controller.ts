@@ -1,6 +1,6 @@
 import { asyncHandler } from "../utils/asyncHandler";
 import { created, ok } from "../utils/ApiResponse";
-import { Ride, User, IRideDocument, IRidePassenger } from "../models"; // <--- Ensure IRidePassenger is imported
+import { Ride, User, IRideDocument, IRidePassenger } from "../models";
 import { PassengerStatus, RideStatus } from "../types/enums";
 import { Request, Response } from "express";
 import { awardPoints } from "./reward.controller";
@@ -56,6 +56,7 @@ export const createRide = asyncHandler(async (req: any, res: Response) => {
   res.status(201).json(created(ride));
 });
 
+// --- UPDATED: HIDE FULL RIDES ---
 export const listRides = asyncHandler(async (req: any, res: Response) => {
   const passenger = await User.findById(req.user.id).select("currentLocation");
   if (!passenger) {
@@ -81,6 +82,19 @@ export const listRides = asyncHandler(async (req: any, res: Response) => {
     .map((ride: IRideDocument) => {
       const driver = ride.driverId as any;
       if (!driver) return null;
+
+      // 1. CHECK CAPACITY
+      // Count how many seats are actually taken (Accepted or PickedUp)
+      const occupiedSeats = ride.passengers.filter(
+        (p: IRidePassenger) =>
+          p.status === PassengerStatus.Accepted ||
+          p.status === PassengerStatus.PickedUp
+      ).length;
+
+      // If the ride is full, return null so it gets filtered out
+      if (occupiedSeats >= ride.vehicle.capacity) {
+        return null;
+      }
 
       let distanceKm = 0;
       if (driver.currentLocation?.coordinates) {
@@ -109,11 +123,12 @@ export const listRides = asyncHandler(async (req: any, res: Response) => {
         },
       };
     })
-    .filter((ride) => ride !== null);
+    .filter((ride) => ride !== null); // Remove nulls (full rides)
 
   res.json(ok(availableRides));
 });
 
+// --- UPDATED: BLOCK REQUESTS IF FULL ---
 export const requestSeat = asyncHandler(async (req: any, res: Response) => {
   const { pickupLat, pickupLng, pickupAddress } = req.body;
 
@@ -131,6 +146,27 @@ export const requestSeat = asyncHandler(async (req: any, res: Response) => {
     throw new ApiError(
       StatusCodes.BAD_REQUEST,
       "Invalid latitude or longitude. Must be numbers."
+    );
+  }
+
+  // 1. Fetch ride first to check capacity
+  const rideCheck = await Ride.findById(req.params.rideId);
+  if (!rideCheck) {
+    throw new ApiError(StatusCodes.NOT_FOUND, "Ride not found");
+  }
+
+  // 2. Calculate occupied seats
+  const occupiedSeats = rideCheck.passengers.filter(
+    (p: IRidePassenger) =>
+      p.status === PassengerStatus.Accepted ||
+      p.status === PassengerStatus.PickedUp
+  ).length;
+
+  // 3. Block request if full
+  if (occupiedSeats >= rideCheck.vehicle.capacity) {
+    throw new ApiError(
+      StatusCodes.BAD_REQUEST,
+      "This ride is already full and cannot accept new requests."
     );
   }
 
@@ -164,7 +200,6 @@ export const requestSeat = asyncHandler(async (req: any, res: Response) => {
   res.json(ok(ride));
 });
 
-// --- UPDATED FUNCTION WITH TYPE FIXES ---
 export const setPassengerStatus = asyncHandler(
   async (req: Request, res: Response) => {
     const { userId, status } = req.body as {
@@ -183,7 +218,6 @@ export const setPassengerStatus = asyncHandler(
 
     // 1. CAPACITY CHECK
     if (status === PassengerStatus.Accepted) {
-      // We explicitly type 'p' as IRidePassenger here to fix the error
       const currentPassengers = ride.passengers.filter(
         (p: IRidePassenger) =>
           p.status === PassengerStatus.Accepted ||
@@ -199,7 +233,6 @@ export const setPassengerStatus = asyncHandler(
     }
 
     // 2. FIND AND UPDATE PASSENGER
-    // Explicitly type 'p' here as well
     const passengerIndex = ride.passengers.findIndex(
       (p: IRidePassenger) => p.userId.toString() === userId
     );
