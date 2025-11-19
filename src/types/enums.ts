@@ -36,6 +36,7 @@ export enum PassengerStatus {
   Accepted = "Accepted",
   PickedUp = "PickedUp",
   DroppedOff = "DroppedOff",
+  Rejected = "Rejected",
 }
 
 export enum PaymentStatus {

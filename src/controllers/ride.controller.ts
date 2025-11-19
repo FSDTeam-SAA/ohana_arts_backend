@@ -1,6 +1,6 @@
 import { asyncHandler } from "../utils/asyncHandler";
 import { created, ok } from "../utils/ApiResponse";
-import { Ride, User, IRideDocument, IRidePassenger } from "../models";
+import { Ride, User, IRideDocument, IRidePassenger } from "../models"; // <--- Ensure IRidePassenger is imported
 import { PassengerStatus, RideStatus } from "../types/enums";
 import { Request, Response } from "express";
 import { awardPoints } from "./reward.controller";
@@ -114,11 +114,9 @@ export const listRides = asyncHandler(async (req: any, res: Response) => {
   res.json(ok(availableRides));
 });
 
-// --- THIS FUNCTION IS UPDATED ---
 export const requestSeat = asyncHandler(async (req: any, res: Response) => {
   const { pickupLat, pickupLng, pickupAddress } = req.body;
 
-  // --- NEW VALIDATION ---
   if (pickupLat === undefined || pickupLng === undefined) {
     throw new ApiError(
       StatusCodes.BAD_REQUEST,
@@ -135,7 +133,6 @@ export const requestSeat = asyncHandler(async (req: any, res: Response) => {
       "Invalid latitude or longitude. Must be numbers."
     );
   }
-  // --- END VALIDATION ---
 
   const update = {
     $addToSet: {
@@ -145,7 +142,7 @@ export const requestSeat = asyncHandler(async (req: any, res: Response) => {
         pickupAddress: pickupAddress,
         pickupLocation: {
           type: "Point",
-          coordinates: [lng, lat], // Use validated 'lng' and 'lat'
+          coordinates: [lng, lat],
         },
       },
     },
@@ -166,39 +163,93 @@ export const requestSeat = asyncHandler(async (req: any, res: Response) => {
 
   res.json(ok(ride));
 });
-// --- END OF UPDATED FUNCTION ---
 
+// --- UPDATED FUNCTION WITH TYPE FIXES ---
 export const setPassengerStatus = asyncHandler(
   async (req: Request, res: Response) => {
     const { userId, status } = req.body as {
       userId: string;
       status: PassengerStatus;
     };
-    const ride = await Ride.findOneAndUpdate(
-      {
-        _id: req.params.rideId,
-        driverId: (req as any).user.id,
-        "passengers.userId": userId,
-      },
-      {
-        $set: {
-          "passengers.$.status": status,
-          "passengers.$.updatedAt": new Date(),
-        },
-      },
-      { new: true }
-    );
 
-    if (socketHelpers && ride && status === PassengerStatus.Accepted) {
-      socketHelpers.joinRideRoom(userId, ride._id.toString());
-      socketHelpers.notifyUser(userId, {
-        type: "RIDE_ACCEPTED",
-        message: "Your ride request was accepted!",
-        rideId: ride.id,
-      });
+    const ride = await Ride.findOne({
+      _id: req.params.rideId,
+      driverId: (req as any).user.id,
+    });
+
+    if (!ride) {
+      throw new ApiError(StatusCodes.NOT_FOUND, "Ride not found");
     }
 
-    res.json(ok(ride));
+    // 1. CAPACITY CHECK
+    if (status === PassengerStatus.Accepted) {
+      // We explicitly type 'p' as IRidePassenger here to fix the error
+      const currentPassengers = ride.passengers.filter(
+        (p: IRidePassenger) =>
+          p.status === PassengerStatus.Accepted ||
+          p.status === PassengerStatus.PickedUp
+      ).length;
+
+      if (currentPassengers >= ride.vehicle.capacity) {
+        throw new ApiError(
+          StatusCodes.BAD_REQUEST,
+          `Vehicle is full! Capacity is ${ride.vehicle.capacity}.`
+        );
+      }
+    }
+
+    // 2. FIND AND UPDATE PASSENGER
+    // Explicitly type 'p' here as well
+    const passengerIndex = ride.passengers.findIndex(
+      (p: IRidePassenger) => p.userId.toString() === userId
+    );
+
+    if (passengerIndex === -1) {
+      throw new ApiError(StatusCodes.NOT_FOUND, "Passenger request not found");
+    }
+
+    ride.passengers[passengerIndex].status = status;
+    ride.passengers[passengerIndex].updatedAt = new Date();
+
+    // 3. SAVE
+    await ride.save();
+
+    // 4. NOTIFICATIONS
+    if (socketHelpers) {
+      const notifData: any = {
+        rideId: ride._id,
+        status: status,
+        message: "",
+        type: "RIDE_UPDATE",
+      };
+
+      switch (status) {
+        case PassengerStatus.Accepted:
+          notifData.message =
+            "Your ride request was ACCEPTED! The driver is on the way.";
+          socketHelpers.joinRideRoom(userId, ride._id.toString());
+          break;
+        case PassengerStatus.Rejected:
+          notifData.message = "Your ride request was declined.";
+          break;
+        case PassengerStatus.PickedUp:
+          notifData.message = "Ride started! Enjoy the trip.";
+          break;
+        case PassengerStatus.DroppedOff:
+          notifData.message = "You have been dropped off. Thanks for riding!";
+          socketHelpers.leaveRideRoom(userId);
+          break;
+      }
+
+      socketHelpers.notifyUser(userId, notifData);
+    }
+
+    const updatedRide = await Ride.findById(ride._id).populate(
+      "passengers.userId",
+      "name phone profilePhoto"
+    );
+
+    res.json(ok(updatedRide));
   }
 );
 
