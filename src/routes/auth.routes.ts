@@ -5,6 +5,9 @@ import {
   me,
   register,
   changePassword,
+  forgotPassword,
+  verifyOtp,
+  resetPassword,
 } from "../controllers/auth.controller";
 import { getAllUsers } from "../controllers/user.controller";
 import { auth } from "../middleware/auth";
@@ -15,5 +18,8 @@ router.post("/login", authLimiter, login);
 router.get("/me", auth, me);
 router.post("/changePassword", auth, changePassword);
 router.get("/allUsers", getAllUsers);
+router.post("/forgot-password", authLimiter, forgotPassword);
+router.post("/verify-otp", authLimiter, verifyOtp);
+router.post("/reset-password", authLimiter, resetPassword);
 
 export default router;

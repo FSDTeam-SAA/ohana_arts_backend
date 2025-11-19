@@ -6,7 +6,6 @@ import bcrypt from "bcryptjs";
 import { Badge } from "../types/enums";
 import { toJSON } from "./plugins/toJSON";
 
-// For the new location field
 export interface IGeoPoint {
   type: "Point";
   coordinates: [number, number];
@@ -19,8 +18,13 @@ export interface IUser extends Document {
   profilePhoto?: string;
   profilePhotoPublicId?: string;
   bio?: string;
-  phone?: string; // <-- NEW FIELD
-  currentLocation?: IGeoPoint; // <-- NEW FIELD
+  phone?: string;
+  currentLocation?: IGeoPoint;
+
+  // --- NEW FIELDS FOR OTP ---
+  resetPasswordOtp?: string;
+  resetPasswordExpires?: Date;
+  // --------------------------
 
   rewardPoints: number;
   badge: Badge;
@@ -46,15 +50,17 @@ const UserSchema = new Schema<IUser>(
     profilePhoto: String,
     profilePhotoPublicId: String,
     bio: { type: String, maxlength: 500 },
-    phone: String, // <-- NEW FIELD
+    phone: String,
 
-    // --- NEW FIELD ---
-    // For storing user's live location
+    // --- NEW FIELDS ---
+    resetPasswordOtp: { type: String, select: false }, // Hide by default
+    resetPasswordExpires: { type: Date, select: false },
+    // ------------------
+
     currentLocation: {
       type: { type: String, enum: ["Point"], default: "Point" },
       coordinates: { type: [Number], default: [0, 0] },
     },
-    // --- END NEW FIELD ---
 
     rewardPoints: { type: Number, default: 0 },
     badge: { type: String, enum: Object.values(Badge), default: Badge.Bronze },
@@ -80,10 +86,7 @@ const UserSchema = new Schema<IUser>(
 
 toJSON(UserSchema);
 
-// --- NEW INDEX ---
-// This is crucial for fast location-based searches ("5 min away")
 UserSchema.index({ currentLocation: "2dsphere" });
-// --- END NEW INDEX ---
 
 UserSchema.pre("save", async function (next) {
   const user = this as IUser & { isModified: (k: string) => boolean };
