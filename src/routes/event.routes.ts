@@ -38,7 +38,7 @@ router.delete("/:id", auth, deleteEvent);
 // RSVP + Invite
 router.post("/:id/rsvp", auth, rsvp);
 router.post("/:id/invite", auth, inviteUser);
-router.post("/:id/invite/respond", auth, respondInvite); // NEW endpoint
+router.post("/:id/invite/respond", auth, respondInvite); 
 
 // GET /api/events/:id/attendees
 router.get("/:id/attendees", auth, listAttendees);
