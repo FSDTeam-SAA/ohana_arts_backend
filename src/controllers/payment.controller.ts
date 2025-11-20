@@ -220,3 +220,31 @@ export const eventPayments = asyncHandler(
     );
   }
 );
+
+export const getMyEarnings = asyncHandler(async (req: Request, res: Response) => {
+  // 1. Find all events created by the logged-in user
+  const myEvents = await Event.find({ createdBy: req.user!.id })
+    .sort({ dateTime: -1 }) // Sort by newest first
+    .select("title dateTime");
+
+  // 2. Calculate total collected amount for each event
+  const earningsList = await Promise.all(
+    myEvents.map(async (event) => {
+      const payments = await Payment.find({
+        eventId: event._id,
+        status: PaymentStatus.Paid,
+      });
+
+      const totalAmount = payments.reduce((sum, p) => sum + p.amount, 0);
+
+      return {
+        eventId: event._id,
+        eventName: event.title,
+        date: event.dateTime,
+        amount: totalAmount,
+      };
+    })
+  );
+
+  res.json(ok(earningsList));
+});

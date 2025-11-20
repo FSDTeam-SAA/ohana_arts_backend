@@ -8,6 +8,7 @@ import {
   forgotPassword,
   verifyOtp,
   resetPassword,
+  withdrawFunds,
 } from "../controllers/auth.controller";
 import { getAllUsers } from "../controllers/user.controller";
 import { auth } from "../middleware/auth";
@@ -21,5 +22,6 @@ router.get("/allUsers", getAllUsers);
 router.post("/forgot-password", authLimiter, forgotPassword);
 router.post("/verify-otp", authLimiter, verifyOtp);
 router.post("/reset-password", authLimiter, resetPassword);
+router.post("/withdraw", auth, withdrawFunds);
 
 export default router;
