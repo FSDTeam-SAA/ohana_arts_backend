@@ -24,10 +24,10 @@ import mongoose from "mongoose";
 import { deleteByPublicId } from "../utils/cloudinaryDelete";
 import { Request, Response } from "express";
 import { awardPoints } from "./reward.controller";
+//all imported file
 
 const parseNumber = (x?: string) => (x === undefined ? undefined : Number(x));
 
-// Helper to safely parse JSON strings (needed when using multer)
 const safeParseJSON = (input: any) => {
   if (typeof input === "string") {
     try {
@@ -39,7 +39,6 @@ const safeParseJSON = (input: any) => {
   return input;
 };
 
-// --- UPDATED CREATE EVENT FUNCTION ---
 export const createEvent = asyncHandler(async (req: any, res: Response) => {
   const {
     title,
@@ -68,22 +67,20 @@ export const createEvent = asyncHandler(async (req: any, res: Response) => {
     );
   }
 
-  // 1. Start a Transaction
   const session = await mongoose.startSession();
   session.startTransaction();
 
   try {
-    // 2. Prepare Attendees List
-    // Add creator as 'Yes'
+
     const allAttendees: any[] = [
       { userId: req.user.id, status: RSVPStatus.Yes, updatedAt: new Date() },
     ];
 
-    // Parse and Add invited users as 'Pending'
+
     const inviteList = safeParseJSON(invitedUserIds);
     if (Array.isArray(inviteList) && inviteList.length > 0) {
       inviteList.forEach((uid: string) => {
-        // Avoid duplicates if creator invited themselves
+ 
         if (uid !== req.user.id) {
           allAttendees.push({
             userId: uid,
@@ -96,7 +93,6 @@ export const createEvent = asyncHandler(async (req: any, res: Response) => {
       });
     }
 
-    // 3. Create Event Object
     const event: any = {
       title,
       description,
@@ -116,7 +112,6 @@ export const createEvent = asyncHandler(async (req: any, res: Response) => {
       };
     }
 
-    // Handle Image Upload
     if (req.file) {
       const img = await uploadBufferToCloudinary(
         req.file.buffer,
@@ -126,11 +121,9 @@ export const createEvent = asyncHandler(async (req: any, res: Response) => {
       event.imagePublicId = img.public_id;
     }
 
-    // Save Event (inside session)
     const savedEvent = await Event.create([event], { session });
     const eventId = savedEvent[0]._id;
 
-    // 4. Handle Bar Hop Stops (if any)
     const stopsList = safeParseJSON(barHopStops);
     let savedStops = [];
 
@@ -155,12 +148,12 @@ export const createEvent = asyncHandler(async (req: any, res: Response) => {
       savedStops = await BarHopStop.insertMany(stopsToInsert, { session });
     }
 
-    // 5. Send Notifications to Invited Users
+
     if (inviteList.length > 0) {
       const host = await User.findById(req.user.id).select("name");
       const hostName = host ? host.name : "A host";
 
-      // Filter out creator just in case
+
       const validInvites = inviteList.filter(
         (uid: string) => uid !== req.user.id
       );
@@ -178,7 +171,6 @@ export const createEvent = asyncHandler(async (req: any, res: Response) => {
       }
     }
 
-    // 6. Create Host CheckIn
     await CheckIn.create(
       [
         {
@@ -190,12 +182,9 @@ export const createEvent = asyncHandler(async (req: any, res: Response) => {
       { session }
     );
 
-    // 7. Commit Transaction
     await session.commitTransaction();
     session.endSession();
 
-    // 8. Award Points (Outside transaction is fine, or keep inside if preferred)
-    // We await this separately to avoid blocking the response if it takes time
     awardPoints(
       savedEvent[0].createdBy,
       "CREATE_RALLY",
@@ -215,8 +204,6 @@ export const createEvent = asyncHandler(async (req: any, res: Response) => {
     throw error;
   }
 });
-
-// --- EXISTING FUNCTIONS (UNCHANGED) ---
 
 export const listEvents = asyncHandler(async (req: any, res: Response) => {
   const scope = (req.query.scope as string) || "upcoming";
