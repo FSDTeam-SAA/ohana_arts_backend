@@ -33,8 +33,19 @@ function calculateDistance(coords1: number[], coords2: number[]): number {
   return R * c; // Distance in km
 }
 
-// --- UPDATED: Accepts Accurate Coordinates ---
 export const createRide = asyncHandler(async (req: any, res: Response) => {
+  const existingRide = await Ride.findOne({
+    driverId: req.user.id,
+    status: RideStatus.Active,
+  });
+
+  if (existingRide) {
+    throw new ApiError(
+      StatusCodes.BAD_REQUEST,
+      "You already have an active ride. End your current DD Mode first."
+    );
+  }
+
   const {
     eventId,
     vehicleName,
@@ -52,14 +63,14 @@ export const createRide = asyncHandler(async (req: any, res: Response) => {
   if (fromLat !== undefined && fromLng !== undefined) {
     fromLocation = {
       type: "Point",
-      coordinates: [Number(fromLng), Number(fromLat)], // GeoJSON is [lng, lat]
+      coordinates: [Number(fromLng), Number(fromLat)],
     };
   }
 
   if (toLat !== undefined && toLng !== undefined) {
     toLocation = {
       type: "Point",
-      coordinates: [Number(toLng), Number(toLat)], // GeoJSON is [lng, lat]
+      coordinates: [Number(toLng), Number(toLat)],
     };
   }
 
@@ -69,8 +80,8 @@ export const createRide = asyncHandler(async (req: any, res: Response) => {
     vehicle: { name: vehicleName, capacity: Number(capacity || 4) },
     fromHub,
     toHub,
-    fromLocation, // Save start coordinates
-    toLocation, // Save end coordinates
+    fromLocation,
+    toLocation,
     passengers: [],
     status: RideStatus.Active,
   });
@@ -88,16 +99,10 @@ export const createRide = asyncHandler(async (req: any, res: Response) => {
 
 export const listRides = asyncHandler(async (req: any, res: Response) => {
   const passenger = await User.findById(req.user.id).select("currentLocation");
-  if (!passenger) {
-    throw new ApiError(StatusCodes.NOT_FOUND, "Passenger not found");
-  }
-  const passengerCoords = passenger.currentLocation?.coordinates;
-  if (
-    !passengerCoords ||
-    (passengerCoords[0] === 0 && passengerCoords[1] === 0)
-  ) {
-    return res.json(ok([]));
-  }
+  const passengerCoords = passenger?.currentLocation?.coordinates;
+
+  const hasPassengerLoc =
+    passengerCoords && (passengerCoords[0] !== 0 || passengerCoords[1] !== 0);
 
   const rides: IRideDocument[] = await Ride.find({
     eventId: req.params.eventId,
@@ -112,7 +117,6 @@ export const listRides = asyncHandler(async (req: any, res: Response) => {
       const driver = ride.driverId as any;
       if (!driver) return null;
 
-      // Check Capacity (Hide if full)
       const occupiedSeats = ride.passengers.filter(
         (p: IRidePassenger) =>
           p.status === PassengerStatus.Accepted ||
@@ -123,15 +127,16 @@ export const listRides = asyncHandler(async (req: any, res: Response) => {
         return null;
       }
 
-      let distanceKm = 0;
-      if (driver.currentLocation?.coordinates) {
-        distanceKm = calculateDistance(
+      let distanceTime = "Distance unknown";
+
+      if (hasPassengerLoc && driver.currentLocation?.coordinates) {
+        const distanceKm = calculateDistance(
           passengerCoords,
           driver.currentLocation.coordinates
         );
+        const minutesAway = Math.max(1, Math.round(distanceKm * 1.5));
+        distanceTime = `${minutesAway} min away`;
       }
-
-      const minutesAway = Math.max(1, Math.round(distanceKm * 1.5));
 
       return {
         id: ride.id,
@@ -139,10 +144,10 @@ export const listRides = asyncHandler(async (req: any, res: Response) => {
         vehicle: ride.vehicle,
         fromHub: ride.fromHub,
         toHub: ride.toHub,
-        fromLocation: ride.fromLocation, // Return accurate start coords to frontend
-        toLocation: ride.toLocation, // Return accurate end coords to frontend
+        fromLocation: ride.fromLocation,
+        toLocation: ride.toLocation,
         status: "Available",
-        distanceTime: `${minutesAway} min away`,
+        distanceTime: distanceTime,
         driverInfo: {
           _id: driver._id,
           name: driver.name,
@@ -189,10 +194,7 @@ export const requestSeat = asyncHandler(async (req: any, res: Response) => {
   ).length;
 
   if (occupiedSeats >= rideCheck.vehicle.capacity) {
-    throw new ApiError(
-      StatusCodes.BAD_REQUEST,
-      "This ride is already full and cannot accept new requests."
-    );
+    throw new ApiError(StatusCodes.BAD_REQUEST, "This ride is already full.");
   }
 
   const update = {
@@ -279,8 +281,7 @@ export const setPassengerStatus = asyncHandler(
 
       switch (status) {
         case PassengerStatus.Accepted:
-          notifData.message =
-            "Your ride request was ACCEPTED! The driver is on the way.";
+          notifData.message = "Your ride request was ACCEPTED!";
           socketHelpers.joinRideRoom(userId, ride._id.toString());
           break;
         case PassengerStatus.Rejected:
@@ -290,7 +291,7 @@ export const setPassengerStatus = asyncHandler(
           notifData.message = "Ride started! Enjoy the trip.";
           break;
         case PassengerStatus.DroppedOff:
-          notifData.message = "You have been dropped off. Thanks for riding!";
+          notifData.message = "You have been dropped off.";
           socketHelpers.leaveRideRoom(userId);
           break;
       }
@@ -331,6 +332,7 @@ export const finishRide = asyncHandler(async (req: any, res: Response) => {
   res.json(ok(ride));
 });
 
+// --- UPDATED: FILTER OUT REJECTED PASSENGERS ---
 export const getMyActiveDriverRide = asyncHandler(
   async (req: any, res: Response) => {
     const activeRide: IRideDocument | null = await Ride.findOne({
@@ -342,8 +344,10 @@ export const getMyActiveDriverRide = asyncHandler(
       return res.json(ok(null));
     }
 
-    const passengersWithLocation = activeRide.passengers.map(
-      (p: IRidePassenger) => {
+    // Only return passengers who are NOT rejected
+    const passengersWithLocation = activeRide.passengers
+      .filter((p: IRidePassenger) => p.status !== PassengerStatus.Rejected)
+      .map((p: IRidePassenger) => {
         return {
           userId: p.userId,
           status: p.status,
@@ -351,8 +355,7 @@ export const getMyActiveDriverRide = asyncHandler(
           pickupLocation: p.pickupLocation,
           pickupAddress: p.pickupAddress || "No address provided",
         };
-      }
-    );
+      });
 
     res.json(
       ok({ ...activeRide.toJSON(), passengers: passengersWithLocation })
