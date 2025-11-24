@@ -7,6 +7,8 @@ import { Notification } from "../models";
 import { Badge } from "../types/enums";
 import { Types } from "mongoose";
 import { SocketHelpers } from "../socket";
+import { ApiError } from "../utils/ApiError";
+import { StatusCodes } from "http-status-codes";
 
 // This variable will hold the helpers
 let socketHelpers: SocketHelpers;
@@ -17,8 +19,49 @@ export const setSocketHelpers = (helpers: SocketHelpers) => {
 };
 
 export const myRewards = asyncHandler(async (req: any, res: Response) => {
-  const r = await Reward.findOne({ userId: req.user.id });
-  res.json(ok(r));
+  const user = await User.findById(req.user.id).select("rewardPoints badge");
+
+  if (!user) throw new ApiError(StatusCodes.NOT_FOUND, "User not found");
+
+  // 1. Determine Next Badge
+  // Sort thresholds ascending to find the next one
+  const sortedThresholds = Object.entries(BADGE_THRESOLDS)
+    .map(([badge, points]) => ({ badge, points }))
+    .sort((a, b) => a.points - b.points);
+
+  let nextBadge = null;
+  let pointsToNext = 0;
+  let progressPercentage = 100;
+
+  for (const tier of sortedThresholds) {
+    if (tier.points > user.rewardPoints) {
+      nextBadge = tier.badge;
+      pointsToNext = tier.points - user.rewardPoints;
+
+      // Calculate percentage for the progress bar
+      const prevTierPoints =
+        sortedThresholds.find((t) => t.points <= user.rewardPoints)?.points ||
+        0;
+      const totalRange = tier.points - prevTierPoints;
+      const currentProgress = user.rewardPoints - prevTierPoints;
+      progressPercentage = Math.round((currentProgress / totalRange) * 100);
+
+      break;
+    }
+  }
+
+  const responseData = {
+    currentPoints: user.rewardPoints,
+    currentBadge: user.badge,
+    nextBadge: {
+      name: nextBadge || "Max Level",
+      pointsNeeded: pointsToNext,
+      progressPercentage: nextBadge ? progressPercentage : 100,
+    },
+    allBadges: sortedThresholds,
+  };
+
+  res.json(ok(responseData));
 });
 
 const POINT_RULES = {
