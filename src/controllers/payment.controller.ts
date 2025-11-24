@@ -183,7 +183,6 @@ export const eventPayments = asyncHandler(
   async (req: Request, res: Response) => {
     const { eventId } = req.params;
 
-    // 1. Get the Event to see who is attending
     const event = await Event.findById(eventId).populate(
       "attendees.userId",
       "name profilePhoto"
@@ -222,12 +221,10 @@ export const eventPayments = asyncHandler(
 );
 
 export const getMyEarnings = asyncHandler(async (req: Request, res: Response) => {
-  // 1. Find all events created by the logged-in user
   const myEvents = await Event.find({ createdBy: req.user!.id })
-    .sort({ dateTime: -1 }) // Sort by newest first
+    .sort({ dateTime: -1 }) 
     .select("title dateTime");
 
-  // 2. Calculate total collected amount for each event
   const earningsList = await Promise.all(
     myEvents.map(async (event) => {
       const payments = await Payment.find({
