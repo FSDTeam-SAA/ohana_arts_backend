@@ -193,7 +193,7 @@ export const createEvent = asyncHandler(async (req: any, res: Response) => {
       })
     );
   } catch (error) {
-    // If anything fails, rollback everything
+    // If anything fails, rollback everything 
     await session.abortTransaction();
     session.endSession();
     throw error;
@@ -202,21 +202,19 @@ export const createEvent = asyncHandler(async (req: any, res: Response) => {
 
 export const listEvents = asyncHandler(async (req: any, res: Response) => {
   const scope = (req.query.scope as string) || "upcoming";
-  const now = dayjs();
-
-  // Define time boundaries
-  const startOfToday = now.startOf("day").toDate();
-  const endOfToday = now.endOf("day").toDate();
-  const startOfTomorrow = now.add(1, "day").startOf("day").toDate();
+  
+  // 1. Define our time anchors
+  const now = new Date(); // Right now (e.g., 2:00 PM)
+  const startOfToday = dayjs().startOf("day").toDate(); // Midnight (00:00 AM today)
 
   let filter: any = {};
 
   if (scope === "upcoming") {
-    // Show events starting Tomorrow or later
-    // (Avoids showing Today's events in 'Upcoming' to prevent duplicates with 'Live')
+    // "Future": Anything strictly after right now
+    // This includes today at 2:30 PM (if now is 1:00 PM) AND tomorrow/next week
     filter = {
       $and: [
-        { dateTime: { $gte: startOfTomorrow } },
+        { dateTime: { $gt: now } }, 
         {
           $or: [
             { createdBy: req.user.id },
@@ -233,11 +231,11 @@ export const listEvents = asyncHandler(async (req: any, res: Response) => {
       ],
     };
   } else if (scope === "past") {
-    // Show events that happened Yesterday or before
-    // (Today's events will NOT show here, keeping them in 'Live')
+    // "History": Anything strictly before today started
+    // If an event was today at 10am, it is NOT past yet. It waits for midnight.
     filter = {
       $and: [
-        { dateTime: { $lt: startOfToday } },
+        { dateTime: { $lt: startOfToday } }, 
         {
           $or: [
             { createdBy: req.user.id },
@@ -254,13 +252,18 @@ export const listEvents = asyncHandler(async (req: any, res: Response) => {
       ],
     };
   } else if (scope === "live") {
-    // Show events happening specifically TODAY
+    // "Happening": Started already ($lte: now), but is still from Today ($gte: startOfToday)
+    // Example: Event at 2:30 PM. 
+    // At 2:29 PM -> It's Upcoming ($gt now)
+    // At 2:30 PM -> It becomes Live ($lte now)
+    // At 11:59 PM -> It is still Live ($gte startOfToday)
+    // At 00:00 AM -> It becomes Past (Next day)
     filter = {
       $and: [
         {
           dateTime: {
-            $gte: startOfToday,
-            $lte: endOfToday,
+            $lte: now,           // Has started
+            $gte: startOfToday,  // But is not from yesterday
           },
         },
         {
