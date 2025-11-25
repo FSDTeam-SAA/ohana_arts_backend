@@ -71,16 +71,13 @@ export const createEvent = asyncHandler(async (req: any, res: Response) => {
   session.startTransaction();
 
   try {
-
     const allAttendees: any[] = [
       { userId: req.user.id, status: RSVPStatus.Yes, updatedAt: new Date() },
     ];
 
-
     const inviteList = safeParseJSON(invitedUserIds);
     if (Array.isArray(inviteList) && inviteList.length > 0) {
       inviteList.forEach((uid: string) => {
- 
         if (uid !== req.user.id) {
           allAttendees.push({
             userId: uid,
@@ -148,11 +145,9 @@ export const createEvent = asyncHandler(async (req: any, res: Response) => {
       savedStops = await BarHopStop.insertMany(stopsToInsert, { session });
     }
 
-
     if (inviteList.length > 0) {
       const host = await User.findById(req.user.id).select("name");
       const hostName = host ? host.name : "A host";
-
 
       const validInvites = inviteList.filter(
         (uid: string) => uid !== req.user.id
@@ -425,7 +420,7 @@ export const inviteUser = asyncHandler(async (req: any, res: Response) => {
 
 export const respondInvite = asyncHandler(async (req: any, res: Response) => {
   const { id: eventId } = req.params;
-  const { action } = req.body as { action: "Accept" | "Decline" };
+  const { action } = req.body as { action: "Accepted" | "Decline" };
 
   const event = await Event.findById(eventId);
   if (!event) throw new ApiError(StatusCodes.NOT_FOUND, "Event not found");
@@ -444,7 +439,7 @@ export const respondInvite = asyncHandler(async (req: any, res: Response) => {
     return res.json(ok({ message: "Already responded", status: me.status }));
   }
 
-  me.status = action === "Accept" ? RSVPStatus.Yes : RSVPStatus.No;
+  me.status = action === "Accepted" ? RSVPStatus.Yes : RSVPStatus.No;
   me.updatedAt = new Date();
   await event.save();
 
