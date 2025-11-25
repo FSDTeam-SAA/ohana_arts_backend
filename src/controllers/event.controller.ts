@@ -225,9 +225,10 @@ export const listEvents = asyncHandler(async (req: any, res: Response) => {
       ],
     };
   } else if (scope === "past") {
+    const startOfToday = dayjs().startOf("day").toDate();
     filter = {
       $and: [
-        { dateTime: { $lt: now.toDate() } },
+        { dateTime: { $lt: startOfToday } },
         {
           $or: [
             { createdBy: req.user.id },
