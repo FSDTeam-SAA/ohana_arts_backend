@@ -25,8 +25,8 @@ export interface IBarHopStop extends Document {
 const BarHopStopSchema = new Schema<IBarHopStop>(
   {
     eventId: { type: Schema.Types.ObjectId, ref: "Event", required: true },
-    order: { type: Number, required: true },
-    name: { type: String, required: true },
+    order: { type: Number /*required: true*/ },
+    name: { type: String /*required: true*/ },
     image: String,
     scheduledAt: Date,
     fee: Number,
@@ -46,4 +46,6 @@ toJSON(BarHopStopSchema);
 
 BarHopStopSchema.index({ eventId: 1, order: 1 }, { unique: true });
 
-export const BarHopStop = mongoose.models.BarHopStop || mongoose.model<IBarHopStop>("BarHopStop", BarHopStopSchema);
+export const BarHopStop =
+  mongoose.models.BarHopStop ||
+  mongoose.model<IBarHopStop>("BarHopStop", BarHopStopSchema);
