@@ -204,11 +204,19 @@ export const listEvents = asyncHandler(async (req: any, res: Response) => {
   const scope = (req.query.scope as string) || "upcoming";
   const now = dayjs();
 
+  // Define time boundaries
+  const startOfToday = now.startOf("day").toDate();
+  const endOfToday = now.endOf("day").toDate();
+  const startOfTomorrow = now.add(1, "day").startOf("day").toDate();
+
   let filter: any = {};
+
   if (scope === "upcoming") {
+    // Show events starting Tomorrow or later
+    // (Avoids showing Today's events in 'Upcoming' to prevent duplicates with 'Live')
     filter = {
       $and: [
-        { dateTime: { $gte: now.toDate() } },
+        { dateTime: { $gte: startOfTomorrow } },
         {
           $or: [
             { createdBy: req.user.id },
@@ -225,7 +233,8 @@ export const listEvents = asyncHandler(async (req: any, res: Response) => {
       ],
     };
   } else if (scope === "past") {
-    const startOfToday = dayjs().startOf("day").toDate();
+    // Show events that happened Yesterday or before
+    // (Today's events will NOT show here, keeping them in 'Live')
     filter = {
       $and: [
         { dateTime: { $lt: startOfToday } },
@@ -245,12 +254,13 @@ export const listEvents = asyncHandler(async (req: any, res: Response) => {
       ],
     };
   } else if (scope === "live") {
+    // Show events happening specifically TODAY
     filter = {
       $and: [
         {
           dateTime: {
-            $gte: now.startOf("day").toDate(),
-            $lte: now.endOf("day").toDate(),
+            $gte: startOfToday,
+            $lte: endOfToday,
           },
         },
         {
