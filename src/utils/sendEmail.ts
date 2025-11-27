@@ -4,7 +4,6 @@ export const sendEmail = async (options: {
   email: string;
   subject: string;
   message: string;
-  html?: string;
 }) => {
   const transporter = nodemailer.createTransport({
     host: process.env.SMTP_HOST,
@@ -14,6 +13,11 @@ export const sendEmail = async (options: {
       user: process.env.SMTP_USER,
       pass: process.env.SMTP_PASS,
     },
+    // --- ADD THIS BLOCK TO FIX THE ERROR ---
+    tls: {
+      rejectUnauthorized: false,
+    },
+    // ---------------------------------------
   });
 
   const message = {
@@ -21,7 +25,6 @@ export const sendEmail = async (options: {
     to: options.email,
     subject: options.subject,
     text: options.message,
-    html: options.html,
   };
 
   await transporter.sendMail(message);

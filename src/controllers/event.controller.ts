@@ -24,10 +24,10 @@ import mongoose from "mongoose";
 import { deleteByPublicId } from "../utils/cloudinaryDelete";
 import { Request, Response } from "express";
 import { awardPoints } from "./reward.controller";
-//all imported file
 
 const parseNumber = (x?: string) => (x === undefined ? undefined : Number(x));
 
+// Helper to safely parse JSON strings
 const safeParseJSON = (input: any) => {
   if (typeof input === "string") {
     try {
@@ -129,7 +129,7 @@ export const createEvent = asyncHandler(async (req: any, res: Response) => {
         eventId: eventId,
         order: Number(stop.order),
         name: stop.name,
-        image: stop.image, // <-- Handles the image URL from Google Places
+        image: stop.image,
         scheduledAt: stop.time ? new Date(stop.time) : undefined,
         fee: stop.fee ? Number(stop.fee) : undefined,
         description: stop.description,
@@ -148,7 +148,6 @@ export const createEvent = asyncHandler(async (req: any, res: Response) => {
     if (inviteList.length > 0) {
       const host = await User.findById(req.user.id).select("name");
       const hostName = host ? host.name : "A host";
-
       const validInvites = inviteList.filter(
         (uid: string) => uid !== req.user.id
       );
@@ -193,7 +192,6 @@ export const createEvent = asyncHandler(async (req: any, res: Response) => {
       })
     );
   } catch (error) {
-    // If anything fails, rollback everything 
     await session.abortTransaction();
     session.endSession();
     throw error;
@@ -202,19 +200,16 @@ export const createEvent = asyncHandler(async (req: any, res: Response) => {
 
 export const listEvents = asyncHandler(async (req: any, res: Response) => {
   const scope = (req.query.scope as string) || "upcoming";
-  
-  // 1. Define our time anchors
-  const now = new Date(); // Right now (e.g., 2:00 PM)
-  const startOfToday = dayjs().startOf("day").toDate(); // Midnight (00:00 AM today)
+
+  const now = new Date();
+  const startOfToday = dayjs().startOf("day").toDate();
 
   let filter: any = {};
 
   if (scope === "upcoming") {
-    // "Future": Anything strictly after right now
-    // This includes today at 2:30 PM (if now is 1:00 PM) AND tomorrow/next week
     filter = {
       $and: [
-        { dateTime: { $gt: now } }, 
+        { dateTime: { $gt: now } },
         {
           $or: [
             { createdBy: req.user.id },
@@ -231,11 +226,9 @@ export const listEvents = asyncHandler(async (req: any, res: Response) => {
       ],
     };
   } else if (scope === "past") {
-    // "History": Anything strictly before today started
-    // If an event was today at 10am, it is NOT past yet. It waits for midnight.
     filter = {
       $and: [
-        { dateTime: { $lt: startOfToday } }, 
+        { dateTime: { $lt: startOfToday } },
         {
           $or: [
             { createdBy: req.user.id },
@@ -252,18 +245,12 @@ export const listEvents = asyncHandler(async (req: any, res: Response) => {
       ],
     };
   } else if (scope === "live") {
-    // "Happening": Started already ($lte: now), but is still from Today ($gte: startOfToday)
-    // Example: Event at 2:30 PM. 
-    // At 2:29 PM -> It's Upcoming ($gt now)
-    // At 2:30 PM -> It becomes Live ($lte now)
-    // At 11:59 PM -> It is still Live ($gte startOfToday)
-    // At 00:00 AM -> It becomes Past (Next day)
     filter = {
       $and: [
         {
           dateTime: {
-            $lte: now,           // Has started
-            $gte: startOfToday,  // But is not from yesterday
+            $lte: now,
+            $gte: startOfToday,
           },
         },
         {
@@ -297,6 +284,7 @@ export const listEvents = asyncHandler(async (req: any, res: Response) => {
   res.json(ok(events));
 });
 
+// --- UPDATED: FETCHES STOPS NOW ---
 export const getEvent = asyncHandler(async (req: Request, res: Response) => {
   const event = await Event.findById(req.params.id).populate(
     "attendees.userId",
@@ -304,9 +292,17 @@ export const getEvent = asyncHandler(async (req: Request, res: Response) => {
   );
 
   if (!event) throw new ApiError(StatusCodes.NOT_FOUND, "Event not found");
-  res.json(ok(event));
+
+  // Fetch the associated stops
+  const stops = await BarHopStop.find({ eventId: event._id }).sort({
+    order: 1,
+  });
+
+  // Return merged object
+  res.json(ok({ ...event.toJSON(), stops }));
 });
 
+// --- UPDATED: HANDLES STOP EDITS ---
 export const updateEvent = asyncHandler(async (req: any, res: Response) => {
   const patch: any = { ...req.body };
   if (patch.capacity) patch.capacity = Number(patch.capacity);
@@ -338,9 +334,49 @@ export const updateEvent = asyncHandler(async (req: any, res: Response) => {
     patch.imagePublicId = up.public_id;
   }
 
+  // Update Main Event
   Object.assign(existing, patch);
   await existing.save();
-  res.json(ok(existing));
+
+  // Update Bar Hop Stops (If provided in request)
+  const barHopStops = req.body.barHopStops;
+  let updatedStops = [];
+
+  if (barHopStops) {
+    const stopsList = safeParseJSON(barHopStops);
+
+    // 1. Delete all old stops for this event
+    await BarHopStop.deleteMany({ eventId: existing._id });
+
+    // 2. Create new stops
+    if (Array.isArray(stopsList) && stopsList.length > 0) {
+      const stopsToInsert = stopsList.map((stop: any) => ({
+        eventId: existing._id,
+        order: Number(stop.order),
+        name: stop.name,
+        image: stop.image,
+        scheduledAt: stop.time ? new Date(stop.time) : undefined,
+        fee: stop.fee ? Number(stop.fee) : undefined,
+        description: stop.description,
+        location: {
+          address: stop.address,
+          point: {
+            type: "Point",
+            coordinates: [Number(stop.lng), Number(stop.lat)],
+          },
+        },
+      }));
+
+      updatedStops = await BarHopStop.insertMany(stopsToInsert);
+    }
+  } else {
+    // If not updating stops, just fetch existing ones to return
+    updatedStops = await BarHopStop.find({ eventId: existing._id }).sort({
+      order: 1,
+    });
+  }
+
+  res.json(ok({ ...existing.toJSON(), stops: updatedStops }));
 });
 
 export const rsvp = asyncHandler(async (req: any, res: Response) => {

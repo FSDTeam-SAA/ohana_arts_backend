@@ -130,6 +130,7 @@ export const forgotPassword = asyncHandler(
       });
       res.json(ok({ message: "Email sent" }));
     } catch (err) {
+      console.error("❌ EMAIL ERROR:", err);
       user.resetPasswordOtp = undefined;
       user.resetPasswordExpires = undefined;
       await user.save();
