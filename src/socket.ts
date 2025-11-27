@@ -12,6 +12,10 @@ const userSockets = new Map<string, string>();
 const socketRideRooms = new Map<string, string>();
 // <socket.id, chatId> - Tracks which chat room a socket is in
 const socketChatRooms = new Map<string, string>();
+
+// --- NEW: EVENT ROOM TRACKING ---
+// <socket.id, eventId> - Tracks which event a user is currently viewing/live in
+const socketEventRooms = new Map<string, string>();
 // ---
 
 export const initSocket = (httpServer: HttpServer) => {
@@ -57,14 +61,12 @@ export const initSocket = (httpServer: HttpServer) => {
 
     // --- CHAT LOGIC ---
     socket.on("chat:join", (chatId: string) => {
-      // Leave any old chat room first
       const oldRoom = socketChatRooms.get(socket.id);
       if (oldRoom) {
         socket.leave(oldRoom);
       }
-      // Join the new chat room
       socket.join(chatId);
-      socketChatRooms.set(socket.id, chatId); // Track it
+      socketChatRooms.set(socket.id, chatId);
       console.log(`User ${userId} joined chat room: ${chatId}`);
     });
 
@@ -74,7 +76,6 @@ export const initSocket = (httpServer: HttpServer) => {
       console.log(`User ${userId} left chat room: ${chatId}`);
     });
 
-    // --- THIS LISTENER IS NOW UPDATED ---
     socket.on(
       "message:send",
       async (payload: {
@@ -82,9 +83,8 @@ export const initSocket = (httpServer: HttpServer) => {
         text?: string;
         attachments?: string[];
       }) => {
-        if (!payload.chatId) return; // Ignore if no chatId
+        if (!payload.chatId) return;
 
-        // 1. Create the message
         const msg = await Message.create({
           chatId: payload.chatId,
           senderId: userId,
@@ -92,31 +92,57 @@ export const initSocket = (httpServer: HttpServer) => {
           attachments: payload.attachments || [],
         });
 
-        // --- 2. ADD POPULATE STEP ---
-        // We do this so the receiver gets the user's info
         const populatedMsg = await msg.populate(
           "senderId",
           "name profilePhoto"
         );
-        // --- END OF UPDATE ---
 
-        // 3. Update the chat's last message time
         await Chat.findByIdAndUpdate(payload.chatId, {
           lastMessageAt: new Date(),
         });
 
-        // 4. This emits the "keyword" to receive with the POPULATED message
         io.to(payload.chatId).emit("chat:message:new", populatedMsg.toJSON());
       }
     );
     // --- END OF CHAT LOGIC ---
 
-    // --- RIDE LOGIC ---
-    socket.on("location:update", (data: { lat: number; lng: number }) => {
-      const rideId = socketRideRooms.get(socket.id);
+    // --- NEW: EVENT TRACKING LOGIC ---
+    // 1. Join Event Room
+    socket.on("event:join", (eventId: string) => {
+      const oldEvent = socketEventRooms.get(socket.id);
+      if (oldEvent) {
+        socket.leave(oldEvent);
+      }
+      socket.join(eventId);
+      socketEventRooms.set(socket.id, eventId);
+      console.log(`User ${userId} joined event room: ${eventId}`);
+    });
 
+    // 2. Leave Event Room
+    socket.on("event:leave", (eventId: string) => {
+      socket.leave(eventId);
+      socketEventRooms.delete(socket.id);
+      console.log(`User ${userId} left event room: ${eventId}`);
+    });
+    // --- END EVENT TRACKING ---
+
+    // --- RIDE & LOCATION LOGIC ---
+    socket.on("location:update", (data: { lat: number; lng: number }) => {
+      // A. Handle Ride Updates (Existing)
+      const rideId = socketRideRooms.get(socket.id);
       if (rideId) {
         socket.to(rideId).emit("user:location:updated", {
+          userId,
+          lat: data.lat,
+          lng: data.lng,
+        });
+      }
+
+      // B. Handle Event Updates (New)
+      // If user is inside an Event Room (meaning they are viewing a live event map)
+      const eventId = socketEventRooms.get(socket.id);
+      if (eventId) {
+        socket.to(eventId).emit("event:user:moved", {
           userId,
           lat: data.lat,
           lng: data.lng,
@@ -129,28 +155,28 @@ export const initSocket = (httpServer: HttpServer) => {
       console.log(`Socket disconnected: ${socket.id} for user: ${userId}`);
       userSockets.delete(userId);
       socketRideRooms.delete(socket.id);
-      socketChatRooms.delete(socket.id); // Clean up chat
+      socketChatRooms.delete(socket.id);
+      socketEventRooms.delete(socket.id); // Cleanup new map
     });
   });
 
-  // --- Helper Functions (All helpers in one place) ---
+  // --- Helper Functions ---
   const notifyUser = (userId: string, data: any) => {
     const socketIdToNotify = userSockets.get(userId);
     if (!socketIdToNotify) {
-      return; // User is not connected
+      return;
     }
     io.to(socketIdToNotify).emit("notification", data);
   };
 
   const broadcastMessage = (chatId: string, message: any) => {
-    // This is called by your API controller
     io.to(chatId).emit("chat:message:new", message);
   };
 
   const joinRideRoom = (userId: string, rideId: string) => {
     const socketIdToJoin = userSockets.get(userId);
     if (!socketIdToJoin) {
-      return; // User is not connected
+      return;
     }
     const socket = io.sockets.sockets.get(socketIdToJoin);
     if (socket) {
@@ -163,7 +189,7 @@ export const initSocket = (httpServer: HttpServer) => {
   const leaveRideRoom = (userId: string) => {
     const socketIdToLeave = userSockets.get(userId);
     if (!socketIdToLeave) {
-      return; // User is not connected
+      return;
     }
     const rideId = socketRideRooms.get(socketIdToLeave);
     if (rideId) {

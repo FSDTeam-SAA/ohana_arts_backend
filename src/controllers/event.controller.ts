@@ -286,19 +286,20 @@ export const listEvents = asyncHandler(async (req: any, res: Response) => {
 
 // --- UPDATED: FETCHES STOPS NOW ---
 export const getEvent = asyncHandler(async (req: Request, res: Response) => {
+  // --- UPDATE THIS LINE ---
+  // We added "currentLocation" to the select string
   const event = await Event.findById(req.params.id).populate(
     "attendees.userId",
-    "name profilePhoto"
+    "name profilePhoto currentLocation"
   );
+  // ------------------------
 
   if (!event) throw new ApiError(StatusCodes.NOT_FOUND, "Event not found");
 
-  // Fetch the associated stops
   const stops = await BarHopStop.find({ eventId: event._id }).sort({
     order: 1,
   });
 
-  // Return merged object
   res.json(ok({ ...event.toJSON(), stops }));
 });
 
