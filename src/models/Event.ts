@@ -1,6 +1,8 @@
 import type { Document, Types } from "mongoose";
 import mongoose from "mongoose";
+import { IGeoPoint } from "./User";
 const { Schema } = mongoose;
+
 
 import { RSVPStatus } from "../types/enums";
 import { toJSON } from "./plugins/toJSON";
@@ -13,10 +15,10 @@ export interface IEventAttendee {
   updatedAt: Date;
 }
 
-export interface IGeoPoint {
-  type: "Point";
-  coordinates: [number, number];
-}
+// export interface IGeoPoint {
+//   type: "Point";
+//   coordinates: [number, number];
+// }
 
 export interface IEvent extends Document {
   title: string;
