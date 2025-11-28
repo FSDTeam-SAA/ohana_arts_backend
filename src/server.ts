@@ -1,6 +1,6 @@
 import "dotenv/config";
-import http from "http";
 import buildApp from "./app";
+import http from "http";
 import { connectDB } from "./config/db";
 import { initSocket, SocketHelpers } from "./socket"; // <-- 1. IMPORT SocketHelpers TYPE
 import { setSocketHelpers } from "./controllers/reward.controller";
@@ -26,8 +26,8 @@ async function main() {
   startEventNotificationScheduler(ioHelpers);
   // --- END OF NEW CODE ---
 
-  const app = buildApp(ioHelpers);
-  server.on("request", app);
+  const newApp = buildApp(ioHelpers);
+  server.on("request", newApp);
 
   server.listen(PORT, () =>
   	console.log(`🚀 API + WS on http://localhost:${PORT}`)
