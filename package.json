@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "tsup src/server.ts --format esm --clean",
-    "start": "node dist/server.mjs"
+    "start": "node dist/server.js"
   },
   "dependencies": {
     "@googlemaps/google-maps-services-js": "^3.4.2",
