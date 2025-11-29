@@ -1,21 +1,18 @@
 import type { Document, Types } from "mongoose";
 import mongoose from "mongoose";
 const { Schema } = mongoose;
-
 import { RSVPStatus } from "../types/enums";
 import { toJSON } from "./plugins/toJSON";
+import { IGeoPoint } from "./User";
 
 type ObjectId = Types.ObjectId;
 
 export interface IEventAttendee {
   userId: ObjectId;
   status: RSVPStatus;
+  invitedBy?: ObjectId;
+  invitedAt?: Date;
   updatedAt: Date;
-}
-
-export interface IGeoPoint {
-  type: "Point";
-  coordinates: [number, number];
 }
 
 export interface IEvent extends Document {
@@ -37,11 +34,12 @@ export interface IEvent extends Document {
   inviteCode?: string;
 
   createdBy: ObjectId;
-  attendees: IEventAttendee[]; // --- NEW FIELD ---
+  attendees: IEventAttendee[];
 
-  isStartNotified?: boolean; // To track if "event starting" notification was sent // --- END NEW FIELD ---
+  isStartNotified?: boolean;
+
   createdAt: Date;
-  updatedAt: Date; //virtual property
+  updatedAt: Date;
 
   attendeeDisplay?: {
     firstThree: {
@@ -83,7 +81,7 @@ const EventSchema = new Schema<IEvent>(
         userId: { type: Schema.Types.ObjectId, ref: "User", required: true },
         status: {
           type: String,
-          enum: Object.values(RSVPStatus), // includes "Pending"
+          enum: Object.values(RSVPStatus),
           required: true,
           default: RSVPStatus.Maybe,
         },
@@ -91,20 +89,17 @@ const EventSchema = new Schema<IEvent>(
         invitedAt: { type: Date },
         updatedAt: { type: Date, default: Date.now },
       },
-    ], // --- NEW FIELD ---
-    isStartNotified: { type: Boolean, default: false }, // --- END NEW FIELD ---
+    ],
+
+    isStartNotified: { type: Boolean, default: false },
   },
   { timestamps: true }
 );
 
-// helpful indexes (no duplicates)
 EventSchema.index({ _id: 1, "attendees.userId": 1 }, { unique: false });
 EventSchema.index({ createdBy: 1, dateTime: -1 });
 EventSchema.index({ inviteCode: 1 }, { sparse: true });
-
-// --- NEW INDEX for the scheduler ---
 EventSchema.index({ dateTime: 1, isStartNotified: 1 });
-// --- END NEW INDEX ---
 
 EventSchema.virtual("attendeeDisplay").get(function (this: IEvent) {
   if (!this.attendees) {
@@ -124,7 +119,7 @@ EventSchema.virtual("attendeeDisplay").get(function (this: IEvent) {
       name: user.name,
       profilePhoto: user.profilePhoto,
       initial: user.name.charAt(0).toUpperCase(),
-    }; 
+    };
   });
 
   const remainingCount = totalAttending > 3 ? totalAttending - 3 : 0;

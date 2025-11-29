@@ -11,3 +11,4 @@ export * from "./Payment";
 export * from "./Reward";
 export * from "./Notification";
 export * from "./Task";
+export * from "./InvalidToken";
