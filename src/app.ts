@@ -8,8 +8,10 @@ import createRoutes from "./routes";
 import type { SocketHelpers } from "./socket";
 import { stripeWebhook } from "./controllers/payment.controller";
 
+const app = express();
+
 export default function buildApp(ioHelpers: SocketHelpers) {
-  const app = express();
+  
 
   app.use(helmet());
   app.use(cors({ origin: process.env.CORS_ORIGIN || "*", credentials: true }));
