@@ -198,9 +198,11 @@ export const createEvent = asyncHandler(async (req: any, res: Response) => {
   }
 });
 
+// src/controllers/event.controller.ts
+
 export const listEvents = asyncHandler(async (req: any, res: Response) => {
   const scope = (req.query.scope as string) || "upcoming";
-
+  
   const now = new Date();
   const startOfToday = dayjs().startOf("day").toDate();
 
@@ -209,7 +211,7 @@ export const listEvents = asyncHandler(async (req: any, res: Response) => {
   if (scope === "upcoming") {
     filter = {
       $and: [
-        { dateTime: { $gt: now } },
+        { dateTime: { $gt: now } }, 
         {
           $or: [
             { createdBy: req.user.id },
@@ -228,7 +230,7 @@ export const listEvents = asyncHandler(async (req: any, res: Response) => {
   } else if (scope === "past") {
     filter = {
       $and: [
-        { dateTime: { $lt: startOfToday } },
+        { dateTime: { $lt: startOfToday } }, 
         {
           $or: [
             { createdBy: req.user.id },
@@ -279,7 +281,8 @@ export const listEvents = asyncHandler(async (req: any, res: Response) => {
   const events = await Event.find(filter)
     .sort({ dateTime: 1 })
     .limit(100)
-    .populate("attendees.userId", "name profilePhoto");
+    .populate("attendees.userId", "name profilePhoto")
+    .populate("createdBy", "name profilePhoto"); 
 
   res.json(ok(events));
 });
