@@ -333,35 +333,42 @@ export const finishRide = asyncHandler(async (req: any, res: Response) => {
 });
 
 // --- UPDATED: FILTER OUT REJECTED PASSENGERS ---
-export const getMyActiveDriverRide = asyncHandler(
-  async (req: any, res: Response) => {
-    const activeRide: IRideDocument | null = await Ride.findOne({
-      driverId: req.user.id,
-      status: RideStatus.Active,
-    }).populate("passengers.userId", "name phone profilePhoto");
+export const getMyActiveDriverRide = asyncHandler(async (req: any, res: Response) => {
+  // 1. Find the active ride belonging to the CURRENT logged-in user (The Driver)
+  const activeRide = await Ride.findOne({
+    driverId: req.user.id,
+    status: RideStatus.Active,
+  }).populate("passengers.userId", "name profilePhoto phone");
 
-    if (!activeRide) {
-      return res.json(ok(null));
-    }
-
-    // Only return passengers who are NOT rejected
-    const passengersWithLocation = activeRide.passengers
-      .filter((p: IRidePassenger) => p.status !== PassengerStatus.Rejected)
-      .map((p: IRidePassenger) => {
-        return {
-          userId: p.userId,
-          status: p.status,
-          updatedAt: p.updatedAt,
-          pickupLocation: p.pickupLocation,
-          pickupAddress: p.pickupAddress || "No address provided",
-        };
-      });
-
-    res.json(
-      ok({ ...activeRide.toJSON(), passengers: passengersWithLocation })
-    );
+  if (!activeRide) {
+    return res.json(ok(null));
   }
-);
+
+  // 2. Format the list specifically for the "Passenger Tracker" UI
+  const passengerTrackerList = activeRide.passengers
+    // Filter out Rejected users (User logic: If rejected, they shouldn't appear in list)
+    .filter((p: any) => p.status !== PassengerStatus.Rejected)
+    .map((p: any) => {
+      const user = p.userId; // This is the populated user object
+      
+      return {
+        _id: p._id,             // The unique ID of this request
+        userId: user._id,       // The ID of the passenger (Naruto/Hinata)
+        name: user.name,        // Display Name
+        profilePhoto: user.profilePhoto, // Avatar
+        status: p.status,       // Current State: 'requested', 'accepted', 'picked_up', 'dropped_off'
+        requestedAt: p.requestedAt
+      };
+    });
+
+  // 3. Send back the Ride ID + The Clean List
+  res.json(ok({
+    _id: activeRide._id,
+    eventId: activeRide.eventId,
+    vehicle: activeRide.vehicle,
+    passengers: passengerTrackerList // <--- This is exactly what your UI needs
+  }));
+});
 
 export const getMyRidesAsPassenger = asyncHandler(
   async (req: any, res: Response) => {
