@@ -2,7 +2,7 @@ import { Router } from "express";
 import { auth } from "../middleware/auth";
 import {
   createRide,
-  finishRide,
+  endDDMode,
   listRides,
   requestSeat,
   setPassengerStatus,
@@ -29,6 +29,6 @@ router.get("/event/:eventId", auth, listRides);
 
 router.post("/:rideId/request", auth, requestSeat);
 router.post("/:rideId/passenger", auth, setPassengerStatus);
-router.post("/:rideId/finish", auth, finishRide);
+router.post("/end-dd-mode", auth, endDDMode);
 
 export default router;

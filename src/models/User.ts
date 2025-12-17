@@ -39,6 +39,12 @@ export interface IUser extends Document {
 
   designatedDriverActive: boolean;
 
+  homeAddress?: string;
+  homeLocation?: {
+    type: string;
+    coordinates: number[];
+  };
+
   comparePassword(plain: string): Promise<boolean>;
 }
 
@@ -59,7 +65,7 @@ const UserSchema = new Schema<IUser>(
 
     currentLocation: {
       type: { type: String, enum: ["Point"], default: "Point" },
-      coordinates: { type: [Number], default: [0, 0] },
+      coordinates: { type: [Number], default: [0, 0] }, 
     },
 
     rewardPoints: { type: Number, default: 0 },
@@ -80,6 +86,12 @@ const UserSchema = new Schema<IUser>(
     ],
 
     designatedDriverActive: { type: Boolean, default: false },
+
+    homeAddress: { type: String }, // Stores "123 Main St"
+  homeLocation: {
+    type: { type: String, enum: ["Point"], default: "Point" },
+    coordinates: { type: [Number], default: [0, 0] },
+  },
   },
   { timestamps: true }
 );
