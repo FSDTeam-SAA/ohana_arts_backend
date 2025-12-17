@@ -163,12 +163,12 @@ export const listRides = asyncHandler(async (req: any, res: Response) => {
 });
 
 export const requestSeat = asyncHandler(async (req: any, res: Response) => {
-  //const { pickupLat, pickupLng, pickupAddress } = req.body;
+  const { pickupLat, pickupLng, pickupAddress } = req.body;
 
   // 1. Validation
-  // if (pickupLat === undefined || pickupLng === undefined) {
-  //   throw new ApiError(StatusCodes.BAD_REQUEST, "Missing location data");
-  // }
+  if (pickupLat === undefined || pickupLng === undefined) {
+    throw new ApiError(StatusCodes.BAD_REQUEST, "Missing location data");
+  }
 
   // 2. Check Ride Availability
   const rideCheck = await Ride.findById(req.params.rideId);
@@ -188,10 +188,10 @@ export const requestSeat = asyncHandler(async (req: any, res: Response) => {
       passengers: {
         userId: req.user.id,
         status: PassengerStatus.Requested,
-        //pickupAddress: pickupAddress, // Stored in Ride for the Driver to see
+        pickupAddress: pickupAddress, // Stored in Ride for the Driver to see
         pickupLocation: {
           type: "Point",
-          //coordinates: [Number(pickupLng), Number(pickupLat)],
+          coordinates: [Number(pickupLng), Number(pickupLat)],
         },
       },
     },
@@ -202,13 +202,14 @@ export const requestSeat = asyncHandler(async (req: any, res: Response) => {
   // --- NEW: SAVE THIS ADDRESS TO USER PROFILE (For "Next Time") ---
   // This satisfies the "show his home location if he previously requested" requirement.
   await User.findByIdAndUpdate(req.user.id, {
-    //homeAddress: pickupAddress,
+    homeAddress: pickupAddress,
     homeLocation: {
       type: "Point",
-      //coordinates: [Number(pickupLng), Number(pickupLat)],
+      coordinates: [Number(pickupLng), Number(pickupLat)],
     }
   });
 
+  // 4. Notify Driver
   if (socketHelpers && ride) {
     const driverSocketId = (ride.driverId as any).toString();
     socketHelpers.notifyUser(driverSocketId, {
