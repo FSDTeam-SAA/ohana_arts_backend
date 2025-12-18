@@ -11,8 +11,8 @@ export interface IRidePassenger {
   userId: ObjectId;
   status: PassengerStatus;
   updatedAt: Date;
-  pickupAddress?: string;
-  pickupLocation?: {
+  destinationAddress?: string;
+  destinationLocation?: {
     type: "Point";
     coordinates: [number, number];
   };
@@ -71,8 +71,8 @@ const RideSchema = new Schema<IRideDocument>(
           default: PassengerStatus.Requested,
         },
         updatedAt: { type: Date, default: Date.now },
-        pickupAddress: String,
-        pickupLocation: {
+        destinationAddress: String, 
+        destinationLocation: {
           type: { type: String, enum: ["Point"], default: "Point" },
           coordinates: { type: [Number], default: [0, 0] },
         },

@@ -162,12 +162,14 @@ export const listRides = asyncHandler(async (req: any, res: Response) => {
   res.json(ok(availableRides));
 });
 
+// --- UPDATED FUNCTION ---
 export const requestSeat = asyncHandler(async (req: any, res: Response) => {
-  const { pickupLat, pickupLng, pickupAddress } = req.body;
+  // CHANGED: We now expect destination details instead of pickup
+  const { destinationLat, destinationLng, destinationAddress } = req.body;
 
   // 1. Validation
-  if (pickupLat === undefined || pickupLng === undefined) {
-    throw new ApiError(StatusCodes.BAD_REQUEST, "Missing location data");
+  if (destinationLat === undefined || destinationLng === undefined) {
+    throw new ApiError(StatusCodes.BAD_REQUEST, "Missing destination location data");
   }
 
   // 2. Check Ride Availability
@@ -175,38 +177,40 @@ export const requestSeat = asyncHandler(async (req: any, res: Response) => {
   if (!rideCheck) throw new ApiError(StatusCodes.NOT_FOUND, "Ride not found");
 
   const occupiedSeats = rideCheck.passengers.filter(
-    (p: any) => p.status === PassengerStatus.Accepted || p.status === PassengerStatus.PickedUp
+    (p: any) =>
+      p.status === PassengerStatus.Accepted || p.status === PassengerStatus.PickedUp
   ).length;
 
   if (occupiedSeats >= rideCheck.vehicle.capacity) {
     throw new ApiError(StatusCodes.BAD_REQUEST, "Ride is full");
   }
 
-  // 3. Add Passenger to Ride (With Address)
+  // --- NEW LOGIC: Save this destination as the user's HOME location ---
+  await User.findByIdAndUpdate(req.user.id, {
+    homeAddress: destinationAddress,
+    homeLocation: {
+      type: "Point",
+      coordinates: [Number(destinationLng), Number(destinationLat)],
+    },
+  });
+
+  // 3. Add Passenger to Ride (With Destination Address)
   const update = {
     $addToSet: {
       passengers: {
         userId: req.user.id,
         status: PassengerStatus.Requested,
-        pickupAddress: pickupAddress, // Stored in Ride for the Driver to see
-        pickupLocation: {
+        destinationAddress: destinationAddress, // Stored for the Driver to see (Drop Off)
+        destinationLocation: {
           type: "Point",
-          coordinates: [Number(pickupLng), Number(pickupLat)],
+          coordinates: [Number(destinationLng), Number(destinationLat)],
         },
       },
     },
   };
 
-  const ride = await Ride.findByIdAndUpdate(req.params.rideId, update, { new: true });
-
-  // --- NEW: SAVE THIS ADDRESS TO USER PROFILE (For "Next Time") ---
-  // This satisfies the "show his home location if he previously requested" requirement.
-  await User.findByIdAndUpdate(req.user.id, {
-    homeAddress: pickupAddress,
-    homeLocation: {
-      type: "Point",
-      coordinates: [Number(pickupLng), Number(pickupLat)],
-    }
+  const ride = await Ride.findByIdAndUpdate(req.params.rideId, update, {
+    new: true,
   });
 
   // 4. Notify Driver
@@ -216,6 +220,7 @@ export const requestSeat = asyncHandler(async (req: any, res: Response) => {
       type: "RIDE_REQUEST",
       message: "You have a new ride request!",
       rideId: ride.id,
+      passengerName: req.user.name, // Helpful to send name immediately
     });
   }
 
@@ -305,15 +310,19 @@ export const setPassengerStatus = asyncHandler(
 
 export const endDDMode = asyncHandler(async (req: any, res: Response) => {
   // 1. Find ANY active ride for this driver (Fixes the "Zombie Data" issue)
-  const ride = await Ride.findOne({ 
-    driverId: req.user.id, 
-    status: RideStatus.Active 
+  const ride = await Ride.findOne({
+    driverId: req.user.id,
+    status: RideStatus.Active,
   });
 
   // 2. Even if no ride is found, force the User Flag to false (Safety Net)
   if (!ride) {
-    await User.findByIdAndUpdate(req.user.id, { designatedDriverActive: false });
-    return res.json(ok({ message: "DD Mode is now OFF (No active ride was found)" }));
+    await User.findByIdAndUpdate(req.user.id, {
+      designatedDriverActive: false,
+    });
+    return res.json(
+      ok({ message: "DD Mode is now OFF (No active ride was found)" })
+    );
   }
 
   // 3. Mark Ride as Completed
@@ -326,11 +335,11 @@ export const endDDMode = asyncHandler(async (req: any, res: Response) => {
   // 5. Cleanup Sockets (Disconnect everyone from the room)
   if (socketHelpers) {
     socketHelpers.leaveRideRoom(req.user.id);
-    
+
     ride.passengers.forEach((passenger: any) => {
       // Check if passenger exists before accessing userId
       if (passenger && passenger.userId) {
-         socketHelpers.leaveRideRoom(passenger.userId.toString());
+        socketHelpers.leaveRideRoom(passenger.userId.toString());
       }
     });
   }
@@ -338,43 +347,48 @@ export const endDDMode = asyncHandler(async (req: any, res: Response) => {
   res.json(ok({ message: "DD Mode Ended Successfully", ride }));
 });
 
-export const getMyActiveDriverRide = asyncHandler(async (req: any, res: Response) => {
-  const activeRide = await Ride.findOne({
-    driverId: req.user.id,
-    status: RideStatus.Active,
-  }).populate("passengers.userId", "name profilePhoto phone");
+// --- UPDATED FUNCTION ---
+export const getMyActiveDriverRide = asyncHandler(
+  async (req: any, res: Response) => {
+    const activeRide = await Ride.findOne({
+      driverId: req.user.id,
+      status: RideStatus.Active,
+    }).populate("passengers.userId", "name profilePhoto phone");
 
-  if (!activeRide) {
-    return res.json(ok(null));
+    if (!activeRide) {
+      return res.json(ok(null));
+    }
+
+    const passengerTrackerList = activeRide.passengers
+      .filter((p: any) => p.status !== PassengerStatus.Rejected)
+      .map((p: any) => {
+        const user = p.userId;
+
+        return {
+          _id: p._id,
+          userId: user._id,
+          name: user.name,
+          profilePhoto: user.profilePhoto,
+          status: p.status,
+
+          // --- CHANGED: Return destinationAddress as 'address' ---
+          // This ensures the driver sees "123 Main St" (Drop Off) in the Tracker
+          address: p.destinationAddress || "No destination provided",
+
+          requestedAt: p.updatedAt, // Using updatedAt as the request time
+        };
+      });
+
+    res.json(
+      ok({
+        _id: activeRide._id,
+        eventId: activeRide.eventId,
+        vehicle: activeRide.vehicle,
+        passengers: passengerTrackerList,
+      })
+    );
   }
-
-  const passengerTrackerList = activeRide.passengers
-    .filter((p: any) => p.status !== PassengerStatus.Rejected)
-    .map((p: any) => {
-      const user = p.userId;
-      
-      return {
-        _id: p._id,
-        userId: user._id,
-        name: user.name,
-        profilePhoto: user.profilePhoto,
-        status: p.status,
-        
-        // --- ADDED THIS FIELD ---
-        // This makes "123 Main St" appear in the Driver's UI
-        address: p.pickupAddress || "No address provided", 
-        
-        requestedAt: p.requestedAt
-      };
-    });
-
-  res.json(ok({
-    _id: activeRide._id,
-    eventId: activeRide.eventId,
-    vehicle: activeRide.vehicle,
-    passengers: passengerTrackerList 
-  }));
-});
+);
 
 export const getMyRidesAsPassenger = asyncHandler(
   async (req: any, res: Response) => {
