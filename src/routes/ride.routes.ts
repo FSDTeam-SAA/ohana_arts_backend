@@ -8,6 +8,7 @@ import {
   setPassengerStatus,
   getMyActiveDriverRide, 
   getMyRidesAsPassenger,
+  getPassengerDestinationHistory,
 } from "../controllers/ride.controller";
 
 const router = Router();
@@ -26,6 +27,8 @@ router.post("/", auth, createRide);
 // GET /api/rides/event/:eventId
 // For the "Available Rides" screen
 router.get("/event/:eventId", auth, listRides);
+
+router.get("/passenger/destination-history", auth, getPassengerDestinationHistory);
 
 router.post("/:rideId/request", auth, requestSeat);
 router.post("/:rideId/passenger", auth, setPassengerStatus);

@@ -162,10 +162,33 @@ export const listRides = asyncHandler(async (req: any, res: Response) => {
   res.json(ok(availableRides));
 });
 
+export const getPassengerDestinationHistory = asyncHandler(async(req: any, res: Response) => {
+  const passengerId = req.user.id;
+
+  if(passengerId === undefined){
+    throw new ApiError(StatusCodes.BAD_REQUEST, "User ID is undefined");
+  }
+
+  const passengerDestinationLocation = await User.findById(passengerId).select('homeAddress homeLocation');
+
+  if(!passengerDestinationLocation){
+    throw new ApiError(StatusCodes.NOT_FOUND, "Passenger not found");
+  }
+
+  res.json(ok(passengerDestinationLocation));
+
+  // const passengerDestinationHistory = await User.aggregate([
+  //   { $match: { _id: myId } },
+  //   { $unwind: "$rideHistory" },
+  // ]);
+});
+
 // --- UPDATED FUNCTION ---
 export const requestSeat = asyncHandler(async (req: any, res: Response) => {
   // CHANGED: We now expect destination details instead of pickup
   const { destinationLat, destinationLng, destinationAddress } = req.body;
+
+
 
   // 1. Validation
   if (destinationLat === undefined || destinationLng === undefined) {
