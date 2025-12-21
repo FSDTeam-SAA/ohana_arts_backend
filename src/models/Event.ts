@@ -137,3 +137,4 @@ toJSON(EventSchema);
 
 export const Event =
   mongoose.models.Event || mongoose.model<IEvent>("Event", EventSchema);
+//check if working
