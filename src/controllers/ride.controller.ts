@@ -370,48 +370,45 @@ export const endDDMode = asyncHandler(async (req: any, res: Response) => {
   res.json(ok({ message: "DD Mode Ended Successfully", ride }));
 });
 
-// --- UPDATED FUNCTION ---
-export const getMyActiveDriverRide = asyncHandler(
-  async (req: any, res: Response) => {
-    const activeRide = await Ride.findOne({
-      driverId: req.user.id,
-      status: RideStatus.Active,
-    }).populate("passengers.userId", "name profilePhoto phone");
+export const getMyActiveDriverRide = asyncHandler(async (req: any, res: Response) => {
+  const activeRide = await Ride.findOne({
+    driverId: req.user.id,
+    status: RideStatus.Active,
+  }).populate("passengers.userId", "name profilePhoto phone");
 
-    if (!activeRide) {
-      return res.json(ok(null));
-    }
-
-    const passengerTrackerList = activeRide.passengers
-      .filter((p: any) => p.status !== PassengerStatus.Rejected)
-      .map((p: any) => {
-        const user = p.userId;
-
-        return {
-          _id: p._id,
-          userId: user._id,
-          name: user.name,
-          profilePhoto: user.profilePhoto,
-          status: p.status,
-
-          // --- CHANGED: Return destinationAddress as 'address' ---
-          // This ensures the driver sees "123 Main St" (Drop Off) in the Tracker
-          address: p.destinationAddress || "No destination provided",
-
-          requestedAt: p.updatedAt, // Using updatedAt as the request time
-        };
-      });
-
-    res.json(
-      ok({
-        _id: activeRide._id,
-        eventId: activeRide.eventId,
-        vehicle: activeRide.vehicle,
-        passengers: passengerTrackerList,
-      })
-    );
+  if (!activeRide) {
+    return res.json(ok(null));
   }
-);
+
+  const passengerTrackerList = activeRide.passengers
+    .filter((p: any) => p.status !== PassengerStatus.Rejected)
+    .map((p: any) => {
+      const user = p.userId;
+      
+      return {
+        _id: p._id,
+        userId: user._id,
+        name: user.name,
+        profilePhoto: user.profilePhoto,
+        status: p.status,
+        address: p.destinationAddress || "No destination provided", 
+        requestedAt: p.updatedAt
+      };
+    });
+
+  res.json(ok({
+    _id: activeRide._id,
+    eventId: activeRide.eventId,
+    vehicle: activeRide.vehicle,
+    
+    fromHub: activeRide.fromHub,
+    toHub: activeRide.toHub,
+    fromLocation: activeRide.fromLocation,
+    toLocation: activeRide.toLocation,   
+
+    passengers: passengerTrackerList 
+  }));
+});
 
 export const getMyRidesAsPassenger = asyncHandler(
   async (req: any, res: Response) => {
