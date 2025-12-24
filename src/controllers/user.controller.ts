@@ -18,11 +18,14 @@ export const getAllUsers = asyncHandler(async (req: Request, res: Response) => {
 });
 
 export const updateProfile = asyncHandler(async (req: any, res: Response) => {
-  const { name, bio, phone } = req.body; // <-- Added phone
+  const { name, bio, phone, bleUUID } = req.body; 
+  
   const update: any = {};
   if (name) update.name = name;
   if (bio) update.bio = bio;
-  if (phone) update.phone = phone; // <-- Added phone
+  if (phone) update.phone = phone;
+  
+  if (bleUUID) update.bleUUID = bleUUID; 
 
   if (req.file) {
     const user = await User.findById(req.user.id);

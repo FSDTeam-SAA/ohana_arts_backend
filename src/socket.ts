@@ -126,8 +126,9 @@ export const initSocket = (httpServer: HttpServer) => {
     });
     // --- END EVENT TRACKING ---
 
-    // --- RIDE & LOCATION LOGIC ---
-    socket.on("location:update", (data: { lat: number; lng: number }) => {
+    // --- RIDE & LOCATION LOGIC (UPDATED FOR BLE) ---
+    // Added bleUUID optional parameter here
+    socket.on("location:update", (data: { lat: number; lng: number; bleUUID?: string }) => {
       // A. Handle Ride Updates (Existing)
       const rideId = socketRideRooms.get(socket.id);
       if (rideId) {
@@ -135,6 +136,7 @@ export const initSocket = (httpServer: HttpServer) => {
           userId,
           lat: data.lat,
           lng: data.lng,
+          bleUUID: data.bleUUID // Pass through the BLE UUID
         });
       }
 
@@ -146,17 +148,18 @@ export const initSocket = (httpServer: HttpServer) => {
           userId,
           lat: data.lat,
           lng: data.lng,
+          bleUUID: data.bleUUID
         });
       }
     });
 
-    // --- Cleanup on Disconnect ---
+
     socket.on("disconnect", () => {
       console.log(`Socket disconnected: ${socket.id} for user: ${userId}`);
       userSockets.delete(userId);
       socketRideRooms.delete(socket.id);
       socketChatRooms.delete(socket.id);
-      socketEventRooms.delete(socket.id); // Cleanup new map
+      socketEventRooms.delete(socket.id); 
     });
   });
 

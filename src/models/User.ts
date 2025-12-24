@@ -21,10 +21,10 @@ export interface IUser extends Document {
   phone?: string;
   currentLocation?: IGeoPoint;
 
-  // --- NEW FIELDS FOR OTP ---
+  bleUUID?: string;
+
   resetPasswordOtp?: string;
   resetPasswordExpires?: Date;
-  // --------------------------
 
   rewardPoints: number;
   badge: Badge;
@@ -58,10 +58,10 @@ const UserSchema = new Schema<IUser>(
     bio: { type: String, maxlength: 500 },
     phone: String,
 
-    // --- NEW FIELDS ---
+    bleUUID: { type: String },
+    
     resetPasswordOtp: { type: String, select: false }, // Hide by default
     resetPasswordExpires: { type: Date, select: false },
-    // ------------------
 
     currentLocation: {
       type: { type: String, enum: ["Point"], default: "Point" },
