@@ -15,6 +15,13 @@ const sign = (id: string) => {
     "30d";
   return jwt.sign({ id }, secret, { expiresIn });
 };
+const refsign = (id: string) => {
+  const secret = process.env.JWT_SECRET_REFRESH as jwt.Secret;
+  const expiresIn: jwt.SignOptions["expiresIn"] =
+    (process.env.JWT_EXPIRES_IN_REFRESH as unknown as jwt.SignOptions["expiresIn"]) ||
+    "30d";
+  return jwt.sign({ id }, secret, { expiresIn });
+};
 
 export const register = asyncHandler(async (req: Request, res: Response) => {
   const { name, email, password } = req.body;
@@ -42,7 +49,7 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
   if (!okPass)
     throw new ApiError(StatusCodes.UNAUTHORIZED, "Invalid credentials");
 
-  return res.json(ok({ token: sign(user.id), user: user.toJSON() }));
+  return res.json(ok({ token: sign(user.id), user: user.toJSON() , refreshToken: refsign(user.id) }));
 });
 
 export const me = asyncHandler(async (req: Request, res: Response) => {
@@ -99,7 +106,7 @@ export const logout = asyncHandler(async (req: Request, res: Response) => {
   if (!token) throw new ApiError(StatusCodes.BAD_REQUEST, "No token provided");
 
   const decoded = jwt.decode(token) as { exp: number };
-  const expiresAt = new Date(decoded.exp * 1000);
+  const expiresAt = new Date(decoded.exp * 100000);
 
   await InvalidToken.create({ token, expiresAt });
   res.json(ok({ message: "Logout successful" }));
@@ -183,3 +190,14 @@ export const resetPassword = asyncHandler(
     res.json(ok({ message: "Password reset successful" }));
   }
 );
+
+
+export const refreshToken = asyncHandler(async (req: Request, res: Response) => {
+  const { refreshToken } = req.body;
+  const decoded = jwt.decode(refreshToken) as { id: string };
+  const isBlacklisted = await InvalidToken.findOne({ token: refreshToken });
+  if (isBlacklisted) throw new ApiError(StatusCodes.UNAUTHORIZED, "Token invalidated");
+  const user = await User.findById(decoded.id);
+  if (!user) throw new ApiError(StatusCodes.UNAUTHORIZED, "User not found");
+  return res.json(ok({ token: sign(user.id), user: user.toJSON() , refreshToken: refsign(user.id) }));
+});
